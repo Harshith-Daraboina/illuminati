@@ -114,8 +114,14 @@ def is_break_time(slot):
     start, end = slot
     # Morning break: 10:30-11:00
     morning_break = (time(10, 30) <= start < time(11, 0))
-    # Lunch break: 13:00-14:00 
-    lunch_break = (time(13, 0) <= start < time(14, 0))
+    # Lunch break: 12:30-14:30 - any two consecutive half hours
+    lunch_break = False
+    if time(12, 30) <= start < time(14, 0):  # Check if this slot starts a potential lunch break
+        # Check if next slot is also marked as lunch time
+        next_start = datetime.combine(datetime.today(), start) + timedelta(minutes=30)
+        next_start_time = next_start.time()
+        if time(12, 30) <= next_start_time < time(14, 30):
+            lunch_break = True
     return morning_break or lunch_break
 
 def check_scheduling_possibility(faculty, classroom, day, start_slot, duration, professor_schedule, classroom_schedule, timetable, TIME_SLOTS):
@@ -249,7 +255,6 @@ def schedule_session(department, semester, course, session_type, professor_sched
         summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Failed", "N/A"])
         
     return scheduled
-
 def generate_all_timetables():
     """Main function to generate timetables for all departments and semesters"""
     TIME_SLOTS = generate_time_slots()
