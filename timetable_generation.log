@@ -790,3 +790,254 @@
 2025-04-11 01:20:47,032 - INFO - Processing ECE semester 8A with 1 courses
 2025-04-11 01:20:47,141 - INFO - Final timetables saved to improved_timetables.xlsx
 2025-04-11 01:20:47,141 - INFO - Successfully scheduled 277 out of 284 courses (97.54%)
+2025-04-11 14:54:04,176 - INFO - Generated 19 time slots from 09:00:00 to 18:30:00
+2025-04-11 14:54:04,214 - INFO - Successfully loaded data from combined.xlsx
+2025-04-11 14:54:04,218 - INFO - Generated course code EC2ALA for Linear Algebra
+2025-04-11 14:54:04,218 - INFO - Generated course code EC2AO for Optimization
+2025-04-11 14:54:04,218 - INFO - Generated course code EC2ACA for Computer Architecture
+2025-04-11 14:54:04,219 - INFO - Generated course code EC2AELA for English Language and Communication
+2025-04-11 14:54:04,219 - INFO - Generated course code EC2ADSA for Data Structures and Algorithms
+2025-04-11 14:54:04,220 - INFO - Generated course code EC2ANA for Network Analysis
+2025-04-11 14:54:04,222 - INFO - Assigned temporary classroom TBD_DSAI_2A for Optimization
+2025-04-11 14:54:04,222 - INFO - Assigned temporary classroom TBD_DSAI_2A for Computer Architecture
+2025-04-11 14:54:04,223 - INFO - Assigned temporary classroom TBD_DSAI_2A for Introduction to Digital VLSI Design/Photography101/Linux for Engineers/Data Science with Python/Introduction to Holistic Personality Development
+2025-04-11 14:54:04,224 - INFO - Assigned temporary classroom TBD_ECE_2A for Optimization
+2025-04-11 14:54:04,224 - INFO - Assigned temporary classroom TBD_ECE_2A for Computer Architecture
+2025-04-11 14:54:04,225 - INFO - Assigned temporary classroom TBD_ECE_2A for Introduction to Digital VLSI Design/Photography101/Linux for Engineers/Data Science with Python/Introduction to Holistic Personality Development
+2025-04-11 14:54:04,230 - INFO - Found 3 departments to process
+2025-04-11 14:54:04,230 - INFO - Processing department: CSE with 7 semester groups
+2025-04-11 14:54:04,231 - INFO - Processing CSE semester 2A with 7 courses
+2025-04-11 14:54:04,237 - INFO - Successfully merged cells for CS162 TUT 1 on Monday
+2025-04-11 14:54:04,238 - INFO - Successfully merged cells for CS163 LEC 2 on Monday
+2025-04-11 14:54:04,238 - INFO - Successfully merged cells for CS164 LAB on Monday
+2025-04-11 14:54:04,239 - INFO - Successfully merged cells for B1 TUT 1 on Monday
+2025-04-11 14:54:04,240 - INFO - Successfully merged cells for CS164 LEC 1 on Tuesday
+2025-04-11 14:54:04,240 - INFO - Successfully merged cells for CS165 LEC 2 on Tuesday
+2025-04-11 14:54:04,241 - INFO - Successfully merged cells for CS163 TUT 1 on Tuesday
+2025-04-11 14:54:04,242 - INFO - Successfully merged cells for B1 LEC 2 on Tuesday
+2025-04-11 14:54:04,243 - INFO - Successfully merged cells for CS164 LEC 2 on Wednesday
+2025-04-11 14:54:04,244 - INFO - Successfully merged cells for CS162 LEC 1 on Wednesday
+2025-04-11 14:54:04,244 - INFO - Successfully merged cells for HS204 / HS153 LEC 1 on Wednesday
+2025-04-11 14:54:04,245 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,245 - INFO - Successfully merged cells for CS163 LEC 1 on Thursday
+2025-04-11 14:54:04,246 - INFO - Successfully merged cells for B1 LEC 1 on Thursday
+2025-04-11 14:54:04,246 - INFO - Successfully merged cells for CS165 LAB on Thursday
+2025-04-11 14:54:04,247 - INFO - Successfully merged cells for B2 TUT 1 on Thursday
+2025-04-11 14:54:04,247 - INFO - Successfully merged cells for CS165 LEC 1 on Friday
+2025-04-11 14:54:04,248 - INFO - Successfully merged cells for CS162 LEC 2 on Friday
+2025-04-11 14:54:04,248 - INFO - Successfully merged cells for HS204 / HS153 LEC 2 on Friday
+2025-04-11 14:54:04,249 - INFO - Successfully merged cells for B2 LEC 2 on Friday
+2025-04-11 14:54:04,250 - INFO - Processing CSE semester 2B with 7 courses
+2025-04-11 14:54:04,257 - INFO - Successfully merged cells for CS163 LEC 2 on Monday
+2025-04-11 14:54:04,258 - INFO - Successfully merged cells for CS162 TUT 1 on Monday
+2025-04-11 14:54:04,259 - INFO - Successfully merged cells for CS164 LAB on Monday
+2025-04-11 14:54:04,259 - INFO - Successfully merged cells for B1 TUT 1 on Monday
+2025-04-11 14:54:04,259 - INFO - Successfully merged cells for CS164 LEC 1 on Tuesday
+2025-04-11 14:54:04,260 - INFO - Successfully merged cells for CS163 TUT 1 on Tuesday
+2025-04-11 14:54:04,261 - INFO - Successfully merged cells for CS165 LEC 2 on Tuesday
+2025-04-11 14:54:04,262 - INFO - Successfully merged cells for B1 LEC 2 on Tuesday
+2025-04-11 14:54:04,264 - INFO - Successfully merged cells for CS164 LEC 2 on Wednesday
+2025-04-11 14:54:04,264 - INFO - Successfully merged cells for HS204 / HS153 LEC 1 on Wednesday
+2025-04-11 14:54:04,265 - INFO - Successfully merged cells for CS162 LEC 1 on Wednesday
+2025-04-11 14:54:04,266 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,266 - INFO - Successfully merged cells for CS163 LEC 1 on Thursday
+2025-04-11 14:54:04,267 - INFO - Successfully merged cells for B2 TUT 1 on Thursday
+2025-04-11 14:54:04,268 - INFO - Successfully merged cells for B1 LEC 1 on Thursday
+2025-04-11 14:54:04,269 - INFO - Successfully merged cells for CS165 LAB on Thursday
+2025-04-11 14:54:04,270 - INFO - Successfully merged cells for CS162 LEC 2 on Friday
+2025-04-11 14:54:04,271 - INFO - Successfully merged cells for CS165 LEC 1 on Friday
+2025-04-11 14:54:04,272 - INFO - Successfully merged cells for B2 LEC 2 on Friday
+2025-04-11 14:54:04,272 - INFO - Successfully merged cells for HS204 / HS153 LEC 2 on Friday
+2025-04-11 14:54:04,273 - INFO - Processing CSE semester 4A with 6 courses
+2025-04-11 14:54:04,279 - INFO - Successfully merged cells for MA202 LEC 1 on Monday
+2025-04-11 14:54:04,279 - INFO - Successfully merged cells for CS206 TUT 1 on Monday
+2025-04-11 14:54:04,280 - INFO - Successfully merged cells for CS204 LAB on Monday
+2025-04-11 14:54:04,281 - INFO - Successfully merged cells for HS205 LEC 1 on Monday
+2025-04-11 14:54:04,282 - INFO - Successfully merged cells for CS204 LEC 1 on Tuesday
+2025-04-11 14:54:04,282 - INFO - Successfully merged cells for CS310 LEC 2 on Tuesday
+2025-04-11 14:54:04,283 - INFO - Successfully merged cells for CS206 LEC 2 on Tuesday
+2025-04-11 14:54:04,284 - INFO - Successfully merged cells for HS205 LEC 2 on Tuesday
+2025-04-11 14:54:04,284 - INFO - Successfully merged cells for CS204 LEC 2 on Wednesday
+2025-04-11 14:54:04,285 - INFO - Successfully merged cells for CS310 TUT 1 on Wednesday
+2025-04-11 14:54:04,285 - INFO - Successfully merged cells for MA202 TUT 1 on Wednesday
+2025-04-11 14:54:04,286 - INFO - Successfully merged cells for CS301 LEC 1 on Wednesday
+2025-04-11 14:54:04,286 - INFO - Successfully merged cells for CS204 TUT 1 on Thursday
+2025-04-11 14:54:04,287 - INFO - Successfully merged cells for CS310 LEC 1 on Thursday
+2025-04-11 14:54:04,288 - INFO - Successfully merged cells for CS206 LEC 1 on Thursday
+2025-04-11 14:54:04,288 - INFO - Successfully merged cells for CS301 TUT 1 on Thursday
+2025-04-11 14:54:04,289 - INFO - Successfully merged cells for MA202 LEC 2 on Friday
+2025-04-11 14:54:04,290 - INFO - Successfully merged cells for CS301 LEC 2 on Friday
+2025-04-11 14:54:04,291 - INFO - Successfully merged cells for CS310 LAB on Friday
+2025-04-11 14:54:04,293 - INFO - Processing CSE semester 4B with 6 courses
+2025-04-11 14:54:04,298 - INFO - Successfully merged cells for CS206 TUT 1 on Monday
+2025-04-11 14:54:04,299 - INFO - Successfully merged cells for CS204 TUT 1 on Monday
+2025-04-11 14:54:04,300 - INFO - Successfully merged cells for CS310 LAB on Monday
+2025-04-11 14:54:04,301 - INFO - Successfully merged cells for CS301 TUT 1 on Monday
+2025-04-11 14:54:04,301 - INFO - Successfully merged cells for CS310 LEC 1 on Tuesday
+2025-04-11 14:54:04,302 - INFO - Successfully merged cells for MA202 TUT 1 on Tuesday
+2025-04-11 14:54:04,303 - INFO - Successfully merged cells for CS204 LEC 1 on Tuesday
+2025-04-11 14:54:04,306 - INFO - Successfully merged cells for HS205 LEC 1 on Tuesday
+2025-04-11 14:54:04,306 - INFO - Successfully merged cells for CS310 LEC 2 on Wednesday
+2025-04-11 14:54:04,308 - INFO - Successfully merged cells for CS206 LEC 1 on Wednesday
+2025-04-11 14:54:04,308 - INFO - Successfully merged cells for CS301 LEC 1 on Wednesday
+2025-04-11 14:54:04,310 - INFO - Successfully merged cells for CS310 TUT 1 on Thursday
+2025-04-11 14:54:04,310 - INFO - Successfully merged cells for MA202 LEC 2 on Thursday
+2025-04-11 14:54:04,311 - INFO - Successfully merged cells for CS204 LEC 2 on Thursday
+2025-04-11 14:54:04,311 - INFO - Successfully merged cells for HS205 LEC 2 on Thursday
+2025-04-11 14:54:04,312 - INFO - Successfully merged cells for CS206 LEC 2 on Friday
+2025-04-11 14:54:04,313 - INFO - Successfully merged cells for MA202 LEC 1 on Friday
+2025-04-11 14:54:04,313 - INFO - Successfully merged cells for CS301 LEC 2 on Friday
+2025-04-11 14:54:04,315 - INFO - Processing CSE semester 6A with 6 courses
+2025-04-11 14:54:04,321 - INFO - Successfully merged cells for B3 LEC 1 on Monday
+2025-04-11 14:54:04,321 - INFO - Successfully merged cells for B4 TUT 1 on Monday
+2025-04-11 14:54:04,322 - INFO - Successfully merged cells for CS307 LAB on Monday
+2025-04-11 14:54:04,323 - INFO - Successfully merged cells for CS307 LEC 1 on Tuesday
+2025-04-11 14:54:04,323 - INFO - Successfully merged cells for B1 TUT 1 on Tuesday
+2025-04-11 14:54:04,325 - INFO - Successfully merged cells for B3 LEC 2 on Tuesday
+2025-04-11 14:54:04,326 - INFO - Successfully merged cells for CS307 LEC 2 on Wednesday
+2025-04-11 14:54:04,326 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,327 - INFO - Successfully merged cells for B4 LEC 1 on Wednesday
+2025-04-11 14:54:04,328 - INFO - Successfully merged cells for B1 LEC 1 on Thursday
+2025-04-11 14:54:04,328 - INFO - Successfully merged cells for B2 LEC 2 on Thursday
+2025-04-11 14:54:04,329 - INFO - Successfully merged cells for B4 LEC 2 on Thursday
+2025-04-11 14:54:04,330 - INFO - Successfully merged cells for B1 LEC 2 on Friday
+2025-04-11 14:54:04,331 - INFO - Successfully merged cells for B2 TUT 1 on Friday
+2025-04-11 14:54:04,332 - INFO - Successfully merged cells for B3 TUT 1 on Friday
+2025-04-11 14:54:04,334 - INFO - Processing CSE semester 6B with 6 courses
+2025-04-11 14:54:04,339 - INFO - Successfully merged cells for B4 TUT 1 on Monday
+2025-04-11 14:54:04,340 - INFO - Successfully merged cells for B3 LEC 1 on Monday
+2025-04-11 14:54:04,341 - INFO - Successfully merged cells for CS307 LAB on Monday
+2025-04-11 14:54:04,341 - INFO - Successfully merged cells for CS307 LEC 1 on Tuesday
+2025-04-11 14:54:04,342 - INFO - Successfully merged cells for B3 LEC 2 on Tuesday
+2025-04-11 14:54:04,342 - INFO - Successfully merged cells for B1 TUT 1 on Tuesday
+2025-04-11 14:54:04,343 - INFO - Successfully merged cells for CS307 LEC 2 on Wednesday
+2025-04-11 14:54:04,344 - INFO - Successfully merged cells for B4 LEC 1 on Wednesday
+2025-04-11 14:54:04,345 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,347 - INFO - Successfully merged cells for B2 LEC 2 on Thursday
+2025-04-11 14:54:04,347 - INFO - Successfully merged cells for B1 LEC 1 on Thursday
+2025-04-11 14:54:04,348 - INFO - Successfully merged cells for B4 LEC 2 on Thursday
+2025-04-11 14:54:04,349 - INFO - Successfully merged cells for B2 TUT 1 on Friday
+2025-04-11 14:54:04,350 - INFO - Successfully merged cells for B1 LEC 2 on Friday
+2025-04-11 14:54:04,351 - INFO - Successfully merged cells for B3 TUT 1 on Friday
+2025-04-11 14:54:04,352 - INFO - Processing CSE semester 8A with 1 courses
+2025-04-11 14:54:04,366 - INFO - Processing department: DSAI with 3 semester groups
+2025-04-11 14:54:04,367 - INFO - Processing DSAI semester 2A with 8 courses
+2025-04-11 14:54:04,372 - INFO - Successfully merged cells for MA163 TUT 1 on Monday
+2025-04-11 14:54:04,373 - INFO - Successfully merged cells for CS162 LEC 2 on Monday
+2025-04-11 14:54:04,374 - INFO - Successfully merged cells for CS163 LAB on Monday
+2025-04-11 14:54:04,374 - INFO - Successfully merged cells for HS161 LEC 2 on Monday
+2025-04-11 14:54:04,375 - INFO - Successfully merged cells for CS163 LEC 1 on Tuesday
+2025-04-11 14:54:04,375 - INFO - Successfully merged cells for DS164 LEC 2 on Tuesday
+2025-04-11 14:54:04,376 - INFO - Successfully merged cells for CS162 TUT 1 on Tuesday
+2025-04-11 14:54:04,376 - INFO - Successfully merged cells for HS161 LEC 1 on Tuesday
+2025-04-11 14:54:04,377 - INFO - Successfully merged cells for B2(New/New/New/New/New) TUT 1 on Tuesday
+2025-04-11 14:54:04,377 - INFO - Successfully merged cells for CS163 LEC 2 on Wednesday
+2025-04-11 14:54:04,378 - INFO - Successfully merged cells for MA163 LEC 1 on Wednesday
+2025-04-11 14:54:04,378 - INFO - Successfully merged cells for CS164 LEC 1 on Wednesday
+2025-04-11 14:54:04,379 - INFO - Successfully merged cells for B1(ASD151/HS151/New/New/New/New) LEC 1 on Wednesday
+2025-04-11 14:54:04,380 - INFO - Successfully merged cells for CS162 LEC 1 on Thursday
+2025-04-11 14:54:04,382 - INFO - Successfully merged cells for CS164 TUT 1 on Thursday
+2025-04-11 14:54:04,383 - INFO - Successfully merged cells for DS164 LAB on Thursday
+2025-04-11 14:54:04,383 - INFO - Successfully merged cells for B1(ASD151/HS151/New/New/New/New) TUT 1 on Thursday
+2025-04-11 14:54:04,384 - INFO - Successfully merged cells for B2(New/New/New/New/New) TUT 2 on Thursday
+2025-04-11 14:54:04,384 - INFO - Successfully merged cells for DS164 LEC 1 on Friday
+2025-04-11 14:54:04,385 - INFO - Successfully merged cells for MA163 LEC 2 on Friday
+2025-04-11 14:54:04,386 - INFO - Successfully merged cells for CS164 LEC 2 on Friday
+2025-04-11 14:54:04,387 - INFO - Successfully merged cells for B2(New/New/New/New/New) LEC 1 on Friday
+2025-04-11 14:54:04,390 - INFO - Processing DSAI semester 4A with 6 courses
+2025-04-11 14:54:04,396 - INFO - Successfully merged cells for MA202 LEC 2 on Monday
+2025-04-11 14:54:04,397 - INFO - Successfully merged cells for CS204 TUT 1 on Monday
+2025-04-11 14:54:04,398 - INFO - Successfully merged cells for DS204 LAB on Monday
+2025-04-11 14:54:04,399 - INFO - Successfully merged cells for DS205 LEC 2 on Monday
+2025-04-11 14:54:04,399 - INFO - Successfully merged cells for DS204 LEC 1 on Tuesday
+2025-04-11 14:54:04,400 - INFO - Successfully merged cells for CS310 LEC 2 on Tuesday
+2025-04-11 14:54:04,401 - INFO - Successfully merged cells for HS206 LEC 2 on Tuesday
+2025-04-11 14:54:04,402 - INFO - Successfully merged cells for DS204 LEC 2 on Wednesday
+2025-04-11 14:54:04,402 - INFO - Successfully merged cells for CS310 TUT 1 on Wednesday
+2025-04-11 14:54:04,403 - INFO - Successfully merged cells for HS206 LEC 1 on Wednesday
+2025-04-11 14:54:04,403 - INFO - Successfully merged cells for DS205 LEC 1 on Wednesday
+2025-04-11 14:54:04,404 - INFO - Successfully merged cells for MA202 TUT 1 on Thursday
+2025-04-11 14:54:04,404 - INFO - Successfully merged cells for CS204 LEC 1 on Thursday
+2025-04-11 14:54:04,405 - INFO - Successfully merged cells for CS310 LAB on Thursday
+2025-04-11 14:54:04,406 - INFO - Successfully merged cells for CS310 LEC 1 on Friday
+2025-04-11 14:54:04,407 - INFO - Successfully merged cells for MA202 LEC 1 on Friday
+2025-04-11 14:54:04,408 - INFO - Successfully merged cells for CS204 LEC 2 on Friday
+2025-04-11 14:54:04,409 - INFO - Processing DSAI semester 6A with 8 courses
+2025-04-11 14:54:04,415 - INFO - Successfully merged cells for DS309 LEC 1 on Monday
+2025-04-11 14:54:04,416 - INFO - Successfully merged cells for DS307 LEC 2 on Monday
+2025-04-11 14:54:04,417 - INFO - Successfully merged cells for B1 TUT 1 on Monday
+2025-04-11 14:54:04,417 - INFO - Successfully merged cells for B2 TUT 1 on Monday
+2025-04-11 14:54:04,418 - INFO - Successfully merged cells for DS307 TUT 1 on Tuesday
+2025-04-11 14:54:04,418 - INFO - Successfully merged cells for DS309 LEC 2 on Tuesday
+2025-04-11 14:54:04,419 - INFO - Successfully merged cells for B1 LEC 1 on Tuesday
+2025-04-11 14:54:04,420 - INFO - Successfully merged cells for DS306 LEC 1 on Wednesday
+2025-04-11 14:54:04,420 - INFO - Successfully merged cells for DS308 LEC 1 on Wednesday
+2025-04-11 14:54:04,421 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,422 - INFO - Successfully merged cells for DS306 LEC 2 on Thursday
+2025-04-11 14:54:04,423 - INFO - Successfully merged cells for DS308 LEC 2 on Thursday
+2025-04-11 14:54:04,423 - INFO - Successfully merged cells for B2 LEC 2 on Thursday
+2025-04-11 14:54:04,424 - INFO - Successfully merged cells for DS307 LEC 1 on Friday
+2025-04-11 14:54:04,424 - INFO - Successfully merged cells for DS308 TUT 1 on Friday
+2025-04-11 14:54:04,425 - INFO - Successfully merged cells for B1 LEC 2 on Friday
+2025-04-11 14:54:04,427 - INFO - Processing department: ECE with 4 semester groups
+2025-04-11 14:54:04,428 - INFO - Processing ECE semester 2A with 8 courses
+2025-04-11 14:54:04,434 - INFO - Successfully merged cells for EC2ACA LEC 1 on Monday
+2025-04-11 14:54:04,435 - INFO - Successfully merged cells for EC2ANA LEC 1 on Monday
+2025-04-11 14:54:04,437 - INFO - Successfully merged cells for EC2ADSA LAB on Monday
+2025-04-11 14:54:04,437 - INFO - Successfully merged cells for B2(New/New/New/New/New) LEC 1 on Monday
+2025-04-11 14:54:04,438 - INFO - Successfully merged cells for EC2ADSA LEC 1 on Tuesday
+2025-04-11 14:54:04,438 - INFO - Successfully merged cells for EC2ALA TUT 1 on Tuesday
+2025-04-11 14:54:04,439 - INFO - Successfully merged cells for EC2ACA LEC 2 on Tuesday
+2025-04-11 14:54:04,440 - INFO - Successfully merged cells for EC2ANA TUT 1 on Tuesday
+2025-04-11 14:54:04,440 - INFO - Successfully merged cells for B2(New/New/New/New/New) TUT 1 on Tuesday
+2025-04-11 14:54:04,441 - INFO - Successfully merged cells for EC2ADSA LEC 2 on Wednesday
+2025-04-11 14:54:04,441 - INFO - Successfully merged cells for EC2AO LEC 1 on Wednesday
+2025-04-11 14:54:04,443 - INFO - Successfully merged cells for EC2AELA LEC 1 on Wednesday
+2025-04-11 14:54:04,446 - INFO - Successfully merged cells for B1(ASD151/HS151/New/New/New/New) LEC 1 on Wednesday
+2025-04-11 14:54:04,446 - INFO - Successfully merged cells for EC2ALA LEC 1 on Thursday
+2025-04-11 14:54:04,447 - INFO - Successfully merged cells for EC2AO LEC 2 on Thursday
+2025-04-11 14:54:04,447 - INFO - Successfully merged cells for EC2AELA LEC 2 on Thursday
+2025-04-11 14:54:04,448 - INFO - Successfully merged cells for B1(ASD151/HS151/New/New/New/New) TUT 1 on Thursday
+2025-04-11 14:54:04,449 - INFO - Successfully merged cells for EC2ALA LEC 2 on Friday
+2025-04-11 14:54:04,449 - INFO - Successfully merged cells for EC2AO TUT 1 on Friday
+2025-04-11 14:54:04,450 - INFO - Successfully merged cells for EC2ACA TUT 1 on Friday
+2025-04-11 14:54:04,451 - INFO - Successfully merged cells for EC2ANA LEC 2 on Friday
+2025-04-11 14:54:04,451 - INFO - Successfully merged cells for B2(New/New/New/New/New) TUT 2 on Friday
+2025-04-11 14:54:04,453 - INFO - Processing ECE semester 4A with 6 courses
+2025-04-11 14:54:04,459 - INFO - Successfully merged cells for MA208 LEC 2 on Monday
+2025-04-11 14:54:04,459 - INFO - Successfully merged cells for HS204 LEC 2 on Monday
+2025-04-11 14:54:04,460 - INFO - Successfully merged cells for EC205 LAB on Monday
+2025-04-11 14:54:04,461 - INFO - Successfully merged cells for EC205 LEC 1 on Tuesday
+2025-04-11 14:54:04,461 - INFO - Successfully merged cells for EC204 LEC 2 on Tuesday
+2025-04-11 14:54:04,462 - INFO - Successfully merged cells for EC310 LEC 2 on Tuesday
+2025-04-11 14:54:04,463 - INFO - Successfully merged cells for EC205 LEC 2 on Wednesday
+2025-04-11 14:54:04,464 - INFO - Successfully merged cells for EC204 TUT 1 on Wednesday
+2025-04-11 14:54:04,465 - INFO - Successfully merged cells for EC310 LEC 1 on Wednesday
+2025-04-11 14:54:04,465 - INFO - Successfully merged cells for HS204 TUT 1 on Wednesday
+2025-04-11 14:54:04,466 - INFO - Successfully merged cells for MA208 TUT 1 on Thursday
+2025-04-11 14:54:04,466 - INFO - Successfully merged cells for EC310 TUT 1 on Thursday
+2025-04-11 14:54:04,467 - INFO - Successfully merged cells for EC204 LAB on Thursday
+2025-04-11 14:54:04,468 - INFO - Successfully merged cells for HS205 LEC 1 on Thursday
+2025-04-11 14:54:04,468 - INFO - Successfully merged cells for EC204 LEC 1 on Friday
+2025-04-11 14:54:04,469 - INFO - Successfully merged cells for MA208 LEC 1 on Friday
+2025-04-11 14:54:04,470 - INFO - Successfully merged cells for HS204 LEC 1 on Friday
+2025-04-11 14:54:04,471 - INFO - Successfully merged cells for HS205 LEC 2 on Friday
+2025-04-11 14:54:04,472 - INFO - Processing ECE semester 6A with 6 courses
+2025-04-11 14:54:04,478 - INFO - Successfully merged cells for B3 LEC 1 on Monday
+2025-04-11 14:54:04,479 - INFO - Successfully merged cells for B4 TUT 1 on Monday
+2025-04-11 14:54:04,481 - INFO - Successfully merged cells for CS307 LAB on Monday
+2025-04-11 14:54:04,481 - INFO - Successfully merged cells for B1 TUT 1 on Tuesday
+2025-04-11 14:54:04,482 - INFO - Successfully merged cells for CS307 LEC 1 on Tuesday
+2025-04-11 14:54:04,483 - INFO - Successfully merged cells for B3 LEC 2 on Tuesday
+2025-04-11 14:54:04,484 - INFO - Successfully merged cells for B2 LEC 1 on Wednesday
+2025-04-11 14:54:04,485 - INFO - Successfully merged cells for B4 LEC 1 on Wednesday
+2025-04-11 14:54:04,487 - INFO - Successfully merged cells for CS307 LEC 2 on Wednesday
+2025-04-11 14:54:04,488 - INFO - Successfully merged cells for B1 LEC 1 on Thursday
+2025-04-11 14:54:04,489 - INFO - Successfully merged cells for B2 LEC 2 on Thursday
+2025-04-11 14:54:04,492 - INFO - Successfully merged cells for B4 LEC 2 on Thursday
+2025-04-11 14:54:04,495 - INFO - Successfully merged cells for B1 LEC 2 on Friday
+2025-04-11 14:54:04,495 - INFO - Successfully merged cells for B2 TUT 1 on Friday
+2025-04-11 14:54:04,497 - INFO - Successfully merged cells for B3 TUT 1 on Friday
+2025-04-11 14:54:04,499 - INFO - Processing ECE semester 8A with 1 courses
+2025-04-11 14:54:04,606 - INFO - Final timetables saved to improved_timetables.xlsx
+2025-04-11 14:54:04,607 - INFO - Successfully scheduled 217 out of 217 courses (100.00%)
