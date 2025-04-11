@@ -1,0 +1,1 @@
+is_no_class_time(TIME_SLOTS[start_slot+i],

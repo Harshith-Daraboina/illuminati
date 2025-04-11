@@ -34,11 +34,11 @@ def generate_time_slots():
     
     while current_time < end_time:
         current = current_time.time()
-        next_time = current_time + timedelta(minutes=30)
+        next_time = (current_time + timedelta(minutes=30)).time()
         
         # Keep all time slots but we'll mark break times later
-        slots.append((current, next_time.time()))
-        current_time = next_time
+        slots.append((current, next_time))
+        current_time = current_time + timedelta(minutes=30)
     
     return slots
 
@@ -182,6 +182,9 @@ def update_schedule(faculty, classroom, day, start_slot, duration, session_type,
         timetable[day][start_slot+i]['name'] = name if i == 0 else ''
         timetable[day][start_slot+i]['faculty'] = faculty if i == 0 else ''
         timetable[day][start_slot+i]['classroom'] = classroom if i == 0 else ''
+        timetable[day][start_slot+i]['duration'] = duration if i == 0 else 0
+        timetable[day][start_slot+i]['is_first'] = (i == 0)
+        timetable[day][start_slot+i]['position'] = i
 
 def schedule_session(department, semester, course, session_type, professor_schedule, classroom_schedule, timetable, TIME_SLOTS, summary_ws, attempt_limit):
     """Schedule a specific session (lab, lecture, or tutorial)"""
@@ -193,7 +196,7 @@ def schedule_session(department, semester, course, session_type, professor_sched
     # Determine duration based on session type
     if session_type == 'LAB':
         duration = LAB_DURATION
-    elif session_type == 'LEC':
+    elif 'LEC' in session_type:
         duration = LECTURE_DURATION
     else:  # TUT
         duration = TUTORIAL_DURATION
@@ -221,7 +224,8 @@ def schedule_session(department, semester, course, session_type, professor_sched
                 update_schedule(faculty, classroom, day, start_slot, duration, session_type, 
                              code, name, professor_schedule, classroom_schedule, timetable)
                 scheduled = True
-                summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Scheduled"])
+                summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Scheduled", 
+                                  f"{DAYS[day]} {TIME_SLOTS[start_slot][0].strftime('%H:%M')}"])
                 break
     
     # Fall back to random attempts if structured approach fails
@@ -236,12 +240,13 @@ def schedule_session(department, semester, course, session_type, professor_sched
             update_schedule(faculty, classroom, day, start_slot, duration, session_type, 
                          code, name, professor_schedule, classroom_schedule, timetable)
             scheduled = True
-            summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Scheduled"])
+            summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Scheduled", 
+                              f"{DAYS[day]} {TIME_SLOTS[start_slot][0].strftime('%H:%M')}"])
         attempts += 1
     
     if not scheduled:
         logging.warning(f"Failed to schedule {session_type} for {code}: {name} - Faculty: {faculty}, Classroom: {classroom}")
-        summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Failed"])
+        summary_ws.append([department, semester, code, name, session_type, faculty, classroom, "Failed", "N/A"])
         
     return scheduled
 
@@ -256,7 +261,7 @@ def generate_all_timetables():
     # Create a summary sheet for failed schedules
     summary_ws = wb.create_sheet(title="Scheduling_Summary")
     summary_ws.append(["Department", "Semester", "Course Code", "Course Name", "Activity Type", 
-                      "Faculty", "Classroom", "Scheduling Status"])
+                      "Faculty", "Classroom", "Scheduling Status", "Time"])
     
     professor_schedule = {}   # Track professor assignments
     classroom_schedule = {}   # Track classroom assignments
@@ -297,9 +302,23 @@ def generate_all_timetables():
             ws_title = ws_title[:31]  # Excel worksheet names are limited to 31 characters
             ws = wb.create_sheet(title=ws_title)
             
-            # Initialize timetable structure
-            timetable = {day: {slot: {'type': None, 'code': '', 'name': '', 'faculty': '', 'classroom': ''} 
-                         for slot in range(len(TIME_SLOTS))} for day in range(len(DAYS))}
+            # Initialize timetable structure with expanded metadata
+            timetable = {
+                day: {
+                    slot: {
+                        'type': None, 
+                        'code': '', 
+                        'name': '', 
+                        'faculty': '', 
+                        'classroom': '',
+                        'duration': 0,
+                        'is_first': False,
+                        'position': 0
+                    } 
+                    for slot in range(len(TIME_SLOTS))
+                } 
+                for day in range(len(DAYS))
+            }
             
             # Special handling for DSAI and ECE departments
             priority_multiplier = 1.5 if department in ['DSAI', 'ECE'] else 1
@@ -405,7 +424,7 @@ def generate_all_timetables():
                     else:
                         failed_courses += 1
             
-            # Write timetable to worksheet with merged cells and breaks
+            # Write timetable to worksheet with improved merged cells handling
             # Create header
             header = ['Day'] + [f"{slot[0].strftime('%H:%M')}-{slot[1].strftime('%H:%M')}" for slot in TIME_SLOTS]
             ws.append(header)
@@ -420,79 +439,145 @@ def generate_all_timetables():
                 cell.font = header_font
                 cell.alignment = header_alignment
             
-            # Fill data and merge cells
-            lec_fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")
-            lab_fill = PatternFill(start_color="98FB98", end_color="98FB98", fill_type="solid")
-            tut_fill = PatternFill(start_color="FFE4E1", end_color="FFE4E1", fill_type="solid")
-            break_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            # Define fill colors for different session types
+            lec_fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")  # Lavender
+            lab_fill = PatternFill(start_color="98FB98", end_color="98FB98", fill_type="solid")  # Pale Green
+            tut_fill = PatternFill(start_color="FFE4E1", end_color="FFE4E1", fill_type="solid")  # Misty Rose
+            break_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid") # Light Gray
+            conflict_fill = PatternFill(start_color="FF6347", end_color="FF6347", fill_type="solid") # Tomato
             border = Border(left=Side(style='thin'), right=Side(style='thin'),
                           top=Side(style='thin'), bottom=Side(style='thin'))
             
+            # IMPROVED WRITING ALGORITHM: Process each day and prepare all cell values and merges
             for day_idx, day in enumerate(DAYS):
                 row_num = day_idx + 2  # +1 for header, +1 because rows start at 1
                 ws.append([day])
                 
-                # Track merged regions
-                merge_ranges = []
+                # First, mark all occupied cells (this will help us avoid merge conflicts)
+                occupied_cells = [False] * len(TIME_SLOTS)
                 
+                # Mark break times
                 for slot_idx in range(len(TIME_SLOTS)):
-                    cell_value = ''
+                    if is_break_time(TIME_SLOTS[slot_idx]):
+                        occupied_cells[slot_idx] = True
+                
+                # Track which cells need to be merged and their merge ranges
+                merges = {}  # key: start slot index, value: (end slot index, activity details)
+                
+                # First pass - identify merges 
+                for slot_idx in range(len(TIME_SLOTS)):
+                    slot_info = timetable[day_idx][slot_idx]
+                    
+                    # If this is the first slot of a multi-slot activity
+                    if slot_info['is_first'] and slot_info['duration'] > 1:
+                        end_slot = slot_idx + slot_info['duration'] - 1
+                        # Check if any of these slots are already marked as occupied
+                        conflict = False
+                        for i in range(slot_idx, end_slot + 1):
+                            if i >= len(TIME_SLOTS) or occupied_cells[i]:
+                                conflict = True
+                                break
+                                
+                        if not conflict:
+                            # Mark all these slots as occupied
+                            for i in range(slot_idx, end_slot + 1):
+                                occupied_cells[i] = True
+                            # Store the merge information
+                            merges[slot_idx] = (end_slot, {
+                                'type': slot_info['type'],
+                                'code': slot_info['code'],
+                                'name': slot_info['name'],
+                                'faculty': slot_info['faculty'],
+                                'classroom': slot_info['classroom']
+                            })
+                        else:
+                            # Mark only this cell as occupied - it's a conflict
+                            occupied_cells[slot_idx] = True
+                    
+                    # For single-slot activities (like break times or conflict indicators)
+                    elif slot_info['type'] is not None and not occupied_cells[slot_idx]:
+                        occupied_cells[slot_idx] = True
+                
+                # Second pass - write cells and perform merges
+                for slot_idx in range(len(TIME_SLOTS)):
+                    cell_content = ''
                     cell_fill = None
                     
-                    # Check if this is break time
+                    # First priority: breaks
                     if is_break_time(TIME_SLOTS[slot_idx]):
-                        cell_value = "BREAK"
+                        cell_content = "BREAK"
                         cell_fill = break_fill
-                    elif timetable[day_idx][slot_idx]['type']:
-                        if timetable[day_idx][slot_idx]['code']:  # First slot of activity
-                            activity_type = timetable[day_idx][slot_idx]['type']
-                            if 'LEC' in activity_type:
-                                duration = LECTURE_DURATION
-                                cell_fill = lec_fill
-                            elif activity_type == 'LAB':
-                                duration = LAB_DURATION
-                                cell_fill = lab_fill
-                            else:  # TUT
-                                duration = TUTORIAL_DURATION
-                                cell_fill = tut_fill
-                            
-                            # Create merged range
-                            start_col = get_column_letter(slot_idx + 2)  # +1 for day column
-                            end_col = get_column_letter(slot_idx + duration + 1)
-                            merge_range = f"{start_col}{row_num}:{end_col}{row_num}"
-                            merge_ranges.append(merge_range)
-                            
-                            # Prepare cell value
-                            code = timetable[day_idx][slot_idx]['code']
+                    
+                    # Second priority: merge start points
+                    elif slot_idx in merges:
+                        end_slot, activity = merges[slot_idx]
+                        activity_type = activity['type']
+                        
+                        # Set fill color based on activity type
+                        if 'LEC' in activity_type:
+                            cell_fill = lec_fill
+                        elif activity_type == 'LAB':
+                            cell_fill = lab_fill
+                        else:  # TUT
+                            cell_fill = tut_fill
+                        
+                        # Create cell content
+                        cell_content = f"{activity['code']} {activity_type}\n{activity['name']}\n{activity['faculty']}\n{activity['classroom']}"
+                        
+                        # Merge cells
+                        start_col = get_column_letter(slot_idx + 2)  # +1 for day column
+                        end_col = get_column_letter(end_slot + 2)
+                        try:
+                            ws.merge_cells(f"{start_col}{row_num}:{end_col}{row_num}")
+                            logging.info(f"Successfully merged cells for {activity['code']} {activity_type} on {day}")
+                        except Exception as e:
+                            logging.warning(f"Failed to merge cells for {activity['code']} {activity_type} on {day}: {str(e)}")
+                    
+                    # Third priority: cells that are part of a merged range (skip them)
+                    elif any(slot_idx > start and slot_idx <= end for start, (end, _) in merges.items()):
+                        continue
+                    
+                    # Fourth priority: individual activities or conflict markers
+                    elif timetable[day_idx][slot_idx]['type'] is not None:
+                        code = timetable[day_idx][slot_idx]['code']
+                        activity_type = timetable[day_idx][slot_idx]['type']
+                        
+                        # Check if this should be a merged cell but couldn't be merged
+                        if timetable[day_idx][slot_idx]['is_first'] and timetable[day_idx][slot_idx]['duration'] > 1:
+                            cell_content = f"{code} {activity_type} - CONFLICT"
+                            cell_fill = conflict_fill
+                        else:
+                            # Regular single-slot activity
                             name = timetable[day_idx][slot_idx]['name']
                             faculty = timetable[day_idx][slot_idx]['faculty']
                             classroom = timetable[day_idx][slot_idx]['classroom']
-                            cell_value = f"{code} {activity_type}\n{name}\n{faculty}\n{classroom}"
-                
-                    # Write to cell
-                    cell = ws.cell(row=row_num, column=slot_idx+2, value=cell_value)
+                            cell_content = f"{code} {activity_type}\n{name}\n{faculty}\n{classroom}"
+                            
+                            # Set fill color based on activity type
+                            if 'LEC' in activity_type:
+                                cell_fill = lec_fill
+                            elif activity_type == 'LAB':
+                                cell_fill = lab_fill
+                            else:  # TUT
+                                cell_fill = tut_fill
+                    
+                    # Write the cell content and apply formatting
+                    cell = ws.cell(row=row_num, column=slot_idx+2, value=cell_content)
                     if cell_fill:
                         cell.fill = cell_fill
                     cell.border = border
                     cell.alignment = Alignment(wrap_text=True, vertical='center', horizontal='center')
-                
-                # Apply all merges for this row
-                for merge_range in merge_ranges:
-                    try:
-                        ws.merge_cells(merge_range)
-                    except ValueError as e:
-                        logging.warning(f"Could not merge cells {merge_range}: {str(e)}")
             
             # Adjust column widths and row heights
             for col_idx in range(1, len(TIME_SLOTS)+2):
                 col_letter = get_column_letter(col_idx)
-                ws.column_dimensions[col_letter].width = 15
+                ws.column_dimensions[col_letter].width = 18  # Slightly wider columns for better readability
             
             for row in ws.iter_rows(min_row=2, max_row=len(DAYS)+1):
-                ws.row_dimensions[row[0].row].height = 60
+                ws.row_dimensions[row[0].row].height = 80  # Taller rows for better readability
     
     # Format summary worksheet
-    for col_idx in range(1, 9):
+    for col_idx in range(1, 10):  # One more column for time
         col_letter = get_column_letter(col_idx)
         summary_ws.column_dimensions[col_letter].width = 20
     
@@ -545,7 +630,7 @@ def generate_all_timetables():
     stats_ws['A1'].alignment = Alignment(horizontal='center')
     
     # Save the workbook
-    output_file = "fixed_timetables.xlsx"
+    output_file = "improved_timetables.xlsx"
     try:
         wb.save(output_file)
         logging.info(f"Final timetables saved to {output_file}")
@@ -553,7 +638,7 @@ def generate_all_timetables():
         print(f"Final timetables saved to {output_file}")
         print(f"Successfully scheduled {scheduled_courses} out of {total_courses} courses ({scheduled_courses/total_courses*100:.2f}%)")
     except PermissionError:
-        alt_file = f"fixed_timetables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        alt_file = f"improved_timetables_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         wb.save(alt_file)
         logging.warning(f"Could not save to {output_file} (file may be open). Saved to {alt_file} instead")
         print(f"Could not save to {output_file} (file may be open). Saved to {alt_file} instead")
