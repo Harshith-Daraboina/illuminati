@@ -16,149 +16,154 @@ import copy # Needed for deep copying schedule states
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configuration ---
-DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
-START_TIME = time(9, 0)
-END_TIME = time(18, 30) # Includes the end time, so last slot starts at 18:00
-
-# Fixed break times. Note: Randomizing breaks per day/group within this fixed slot structure is complex.
-# This implementation uses fixed break slots for simplicity, covering the 12:30-2:30 window.
-LUNCH_BREAK_START = time(13, 0)
-LUNCH_BREAK_END = time(14, 30) # 1.5 hours break (slots from 13:00 to 14:30 will be marked as breaks)
-MORNING_BREAK_START = time(10, 30)
-MORNING_BREAK_END = time(11, 0) # 0.5 hours break
-SLOT_DURATION_MINUTES = 30
-
-# Durations in number of 30-min slots
-LECTURE_SLOTS = 3  # 1.5 hours
-LAB_SLOTS = 4      # 2 hours (Needs 2 rooms for each P session)
-TUTORIAL_SLOTS = 2 # 1 hour
-
-MAX_SCHEDULING_ATTEMPTS_BASKET = 300 # Attempts for finding a common basket slot
-MAX_SCHEDULING_ATTEMPTS_SESSION = 500 # Attempts per individual L/T/P session
-
-
-# Lab type mapping by department
-LAB_TYPES = {
-    'CSE': 'COMPUTER_LAB',
-    'DSAI': 'COMPUTER_LAB',
-    'ECE': 'HARDWARE_LAB'
-}
+class TimeTableConfig:
+    """Configuration settings for timetable generation"""
+    DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    START_TIME = time(9, 0)
+    END_TIME = time(18, 30)
+    
+    # Break times
+    LUNCH_BREAK_START = time(13, 0)
+    LUNCH_BREAK_END = time(14, 30)
+    MORNING_BREAK_START = time(10, 30)
+    MORNING_BREAK_END = time(11, 0)
+    
+    # Slot durations
+    SLOT_DURATION_MINUTES = 30
+    LECTURE_SLOTS = 3
+    LAB_SLOTS = 4
+    TUTORIAL_SLOTS = 2
+    
+    # Scheduling attempts
+    MAX_SCHEDULING_ATTEMPTS_BASKET = 300
+    MAX_SCHEDULING_ATTEMPTS_SESSION = 500
+    
+    # File paths
+    CLASSROOMS_FILE = 'Classrooms.csv'
+    COURSES_FILE = 'Semester_courses.csv'
+    OUTPUT_FILE = 'timetable_output.xlsx'
+    
+    # Lab types by department
+    LAB_TYPES = {
+        'CSE': 'COMPUTER_LAB',
+        'DSAI': 'COMPUTER_LAB',
+        'ECE': 'HARDWARE_LAB'
+    }
 
 # --- Time Slot Generation ---
 def generate_time_slots():
-    """Generate all possible 30-min time slots in a day, identifying breaks."""
-    slots = [] # List of all slot details including breaks
-    schedulable_slot_indices = [] # List of indices of slots that are NOT breaks
-    current_time = datetime.combine(datetime.today(), START_TIME)
-    # Calculate end_datetime to include the slot starting exactly at END_TIME if SLOT_DURATION_MINUTES allows
-    end_limit_datetime = datetime.combine(datetime.today(), END_TIME) + timedelta(minutes=SLOT_DURATION_MINUTES)
+    """Generate all possible 30-min time slots in a day, identifying breaks."""
+    slots = [] # List of all slot details including breaks
+    schedulable_slot_indices = [] # List of indices of slots that are NOT breaks
+    current_time = datetime.combine(datetime.today(), TimeTableConfig.START_TIME)
+    # Calculate end_datetime to include the slot starting exactly at END_TIME if SLOT_DURATION_MINUTES allows
+    end_limit_datetime = datetime.combine(datetime.today(), TimeTableConfig.END_TIME) + timedelta(minutes=TimeTableConfig.SLOT_DURATION_MINUTES)
 
-    slot_index = 0
-    while current_time < end_limit_datetime:
-        start = current_time.time()
-        end = (current_time + timedelta(minutes=SLOT_DURATION_MINUTES)).time()
+    slot_index = 0
+    while current_time < end_limit_datetime:
+        start = current_time.time()
+        end = (current_time + timedelta(minutes=TimeTableConfig.SLOT_DURATION_MINUTES)).time()
         # Cap the end time at END_TIME if it goes beyond
-        if end > END_TIME:
-            end = END_TIME
+        if end > TimeTableConfig.END_TIME:
+            end = TimeTableConfig.END_TIME
 
-        is_break = False
-        # A slot is a break slot if its START time is within a defined break period
-        if (MORNING_BREAK_START <= start < MORNING_BREAK_END) or \
-           (LUNCH_BREAK_START <= start < LUNCH_BREAK_END):
-            is_break = True
+        is_break = False
+        # A slot is a break slot if its START time is within a defined break period
+        if (TimeTableConfig.MORNING_BREAK_START <= start < TimeTableConfig.MORNING_BREAK_END) or \
+           (TimeTableConfig.LUNCH_BREAK_START <= start < TimeTableConfig.LUNCH_BREAK_END):
+            is_break = True
 
-        slot_label = f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
-        slot_info = {
-           "index": slot_index,
-           "label": slot_label,
-           "start_time": start,
-           "end_time": end,
-           "is_break": is_break
-        }
-        slots.append(slot_info)
+        slot_label = f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+        slot_info = {
+           "index": slot_index,
+           "label": slot_label,
+           "start_time": start,
+           "end_time": end,
+           "is_break": is_break
+        }
+        slots.append(slot_info)
 
-        if not is_break:
-            schedulable_slot_indices.append(slot_index) # Store indices of non-break slots
+        if not is_break:
+            schedulable_slot_indices.append(slot_index) # Store indices of non-break slots
 
-        current_time += timedelta(minutes=SLOT_DURATION_MINUTES)
-        slot_index += 1
+        current_time += timedelta(minutes=TimeTableConfig.SLOT_DURATION_MINUTES)
+        slot_index += 1
 
-    num_slots_per_day = len(slots)
-    logging.info(f"Generated {num_slots_per_day} total slots per day.")
-    logging.info(f"Identified {len(schedulable_slot_indices)} schedulable slot indices.")
+    num_slots_per_day = len(slots)
+    logging.info(f"Generated {num_slots_per_day} total slots per day.")
+    logging.info(f"Identified {len(schedulable_slot_indices)} schedulable slot indices.")
 
-    return slots, schedulable_slot_indices, num_slots_per_day
+    return slots, schedulable_slot_indices, num_slots_per_day
 
 ALL_SLOTS, SCHEDULABLE_SLOT_INDICES, NUM_SLOTS_PER_DAY = generate_time_slots()
 
 
 # --- Data Loading ---
-def load_classroom_data(file_path='Classrooms.csv'):
-    """Load classroom data from CSV file, add priority."""
-    if not os.path.exists(file_path):
-        logging.error(f"Classrooms data not found at {file_path}")
-        raise FileNotFoundError(f"Classrooms data not found at {file_path}")
+def load_classroom_data(file_path=TimeTableConfig.CLASSROOMS_FILE):
+    """Load classroom data from CSV file, add priority."""
+    if not os.path.exists(file_path):
+        logging.error(f"Classrooms data not found at {file_path}")
+        raise FileNotFoundError(f"Classrooms data not found at {file_path}")
 
-    try:
-        df = pd.read_csv(file_path)
-        df = df.dropna(subset=['Classroom']) # Remove rows where Classroom is NaN
-        df['Capacity'] = pd.to_numeric(df['Capacity'], errors='coerce').fillna(0).astype(int)
-        df['Type'] = df['Type'].astype(str).str.upper() # Standardize type
+    try:
+        df = pd.read_csv(file_path)
+        df = df.dropna(subset=['Classroom']) # Remove rows where Classroom is NaN
+        df['Capacity'] = pd.to_numeric(df['Capacity'], errors='coerce').fillna(0).astype(int)
+        df['Type'] = df['Type'].astype(str).str.upper() # Standardize type
 
-        # Prioritize larger rooms and specific lecture halls
-        df['Priority'] = df.apply(
-             lambda row: 1 if row['Capacity'] >= 100 and 'LECTURE' in row['Type']
-             else 2 if 'LECTURE' in row['Type']
-             else 3 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type']) and row['Capacity'] >= 40 # Prioritize larger labs slightly
-             else 4 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type'])
-             else 5, axis=1 # Other types lower priority
-        )
-        # Sort by priority (lower is better), then capacity (higher is better)
-        return df.sort_values(['Priority', 'Capacity'], ascending=[True, False]).to_dict('records')
-    except Exception as e:
-        logging.error(f"Error loading or processing classroom data: {e}")
-        raise
+        # Prioritize larger rooms and specific lecture halls
+        df['Priority'] = df.apply(
+             lambda row: 1 if row['Capacity'] >= 100 and 'LECTURE' in row['Type']
+             else 2 if 'LECTURE' in row['Type']
+             else 3 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type']) and row['Capacity'] >= 40 # Prioritize larger labs slightly
+             else 4 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type'])
+             else 5, axis=1 # Other types lower priority
+        )
+        # Sort by priority (lower is better), then capacity (higher is better)
+        return df.sort_values(['Priority', 'Capacity'], ascending=[True, False]).to_dict('records')
+    except Exception as e:
+        logging.error(f"Error loading or processing classroom data: {e}")
+        raise
 
-def load_course_data(file_path='Semester_courses.csv'):
-    """Load course data from CSV file, clean and calculate needed slots."""
-    if not os.path.exists(file_path):
-        logging.error(f"Course data not found at {file_path}")
-        raise FileNotFoundError(f"Course data not found at {file_path}")
+def load_course_data(file_path=TimeTableConfig.COURSES_FILE):
+    """Load course data from CSV file, clean and calculate needed slots."""
+    if not os.path.exists(file_path):
+        logging.error(f"Course data not found at {file_path}")
+        raise FileNotFoundError(f"Course data not found at {file_path}")
 
-    try:
-        df = pd.read_csv(file_path)
-        # Drop rows where essential info is missing
-        df = df.dropna(subset=['Department', 'Semester', 'Course Code', 'Course Name', 'Faculty'])
-        df['Semester'] = df['Semester'].astype(str).str.strip()
-        df['Department'] = df['Department'].astype(str).str.strip()
-        df['Course Code'] = df['Course Code'].astype(str).str.strip()
-        df['Course Name'] = df['Course Name'].astype(str).str.strip()
-        df['Faculty'] = df['Faculty'].astype(str).str.strip()
+    try:
+        df = pd.read_csv(file_path)
+        # Drop rows where essential info is missing
+        df = df.dropna(subset=['Department', 'Semester', 'Course Code', 'Course Name', 'Faculty'])
+        df['Semester'] = df['Semester'].astype(str).str.strip()
+        df['Department'] = df['Department'].astype(str).str.strip()
+        df['Course Code'] = df['Course Code'].astype(str).str.strip()
+        df['Course Name'] = df['Course Name'].astype(str).str.strip()
+        df['Faculty'] = df['Faculty'].astype(str).str.strip()
 
-        df['Enrolled_students'] = pd.to_numeric(df['Enrolled_students'], errors='coerce').fillna(25).astype(int) # Default enrollment if missing
-        df['L'] = pd.to_numeric(df['L'], errors='coerce').fillna(0)
-        df['T'] = pd.to_numeric(df['T'], errors='coerce').fillna(0)
-        df['P'] = pd.to_numeric(df['P'], errors='coerce').fillna(0)
-        df['class_connector'] = df['class_connector'].astype(str).replace('nan', '').str.strip()
+        df['Enrolled_students'] = pd.to_numeric(df['Enrolled_students'], errors='coerce').fillna(25).astype(int) # Default enrollment if missing
+        df['L'] = pd.to_numeric(df['L'], errors='coerce').fillna(0)
+        df['T'] = pd.to_numeric(df['T'], errors='coerce').fillna(0)
+        df['P'] = pd.to_numeric(df['P'], errors='coerce').fillna(0)
+        df['class_connector'] = df['class_connector'].astype(str).replace('nan', '').str.strip()
 
 
-        # Identify electives (Basket courses) - check Course Code for B1/B2 etc.
-        df['is_elective'] = df['Course Code'].str.contains(r'^B[1-4]', regex=True) | df['Course Name'].str.contains(r'^B[1-4]', regex=True) # Check code or name
-        df['basket_code'] = df['Course Code'].str.extract(r'^(B[1-4])', expand=False).fillna('')
-        # If basket code not in Course Code, try Course Name (e.g., "B1(ASD151/...)")
-        mask = (df['basket_code'] == '') & df['is_elective']
-        df.loc[mask, 'basket_code'] = df.loc[mask, 'Course Name'].str.extract(r'^(B[1-4])', expand=False).fillna('')
+        # Identify electives (Basket courses) - check Course Code for B1/B2 etc.
+        df['is_elective'] = df['Course Code'].str.contains(r'^B[1-4]', regex=True) | df['Course Name'].str.contains(r'^B[1-4]', regex=True) # Check code or name
+        df['basket_code'] = df['Course Code'].str.extract(r'^(B[1-4])', expand=False).fillna('')
+        # If basket code not in Course Code, try Course Name (e.g., "B1(ASD151/...)")
+        mask = (df['basket_code'] == '') & df['is_elective']
+        df.loc[mask, 'basket_code'] = df.loc[mask, 'Course Name'].str.extract(r'^(B[1-4])', expand=False).fillna('')
 
         # Ensure all electives have a basket code, default if necessary
         df.loc[df['is_elective'] & (df['basket_code'] == ''), 'basket_code'] = 'B_Unknown'
 
 
-        # Calculate required weekly sessions (each session is a contiguous block of slots)
-        df['L_sessions_needed'] = df['L'].apply(lambda x: math.ceil(x / (LECTURE_SLOTS * SLOT_DURATION_MINUTES / 60)) if LECTURE_SLOTS > 0 else 0)
-        df['T_sessions_needed'] = df['T'].apply(lambda x: math.ceil(x / (TUTORIAL_SLOTS * SLOT_DURATION_MINUTES / 60)) if TUTORIAL_SLOTS > 0 else 0)
-        # P sessions need 2 rooms per session
-        df['P_sessions_needed'] = df['P'].apply(lambda x: math.ceil(x / (LAB_SLOTS * SLOT_DURATION_MINUTES / 60)) if LAB_SLOTS > 0 else 0)
+        # Calculate required weekly sessions (each session is a contiguous block of slots)
+        df['L_sessions_needed'] = df['L'].apply(lambda x: math.ceil(x / (TimeTableConfig.LECTURE_SLOTS * TimeTableConfig.SLOT_DURATION_MINUTES / 60)) if TimeTableConfig.LECTURE_SLOTS > 0 else 0)
+        df['T_sessions_needed'] = df['T'].apply(lambda x: math.ceil(x / (TimeTableConfig.TUTORIAL_SLOTS * TimeTableConfig.SLOT_DURATION_MINUTES / 60)) if TimeTableConfig.TUTORIAL_SLOTS > 0 else 0)
+        # P sessions need 2 rooms per session
+        df['P_sessions_needed'] = df['P'].apply(lambda x: math.ceil(x / (TimeTableConfig.LAB_SLOTS * TimeTableConfig.SLOT_DURATION_MINUTES / 60)) if TimeTableConfig.LAB_SLOTS > 0 else 0)
 
         # Add columns to track scheduled sessions per course component (for DataFrame status)
         df['L_scheduled'] = 0
@@ -167,60 +172,60 @@ def load_course_data(file_path='Semester_courses.csv'):
         df['failed'] = [[] for _ in range(len(df))] # To store failed session types (list per row)
 
 
-        # Unique identifier for each course instance
-        df['unique_id'] = df.apply(lambda row: f"{row['Department']}_{row['Semester']}_{row['Course Code']}_{row['Faculty']}", axis=1)
+        # Unique identifier for each course instance
+        df['unique_id'] = df.apply(lambda row: f"{row['Department']}_{row['Semester']}_{row['Course Code']}_{row['Faculty']}", axis=1)
         # Use Department, Semester, Course Code, and Faculty for uniqueness
 
 
-        return df
-    except Exception as e:
-        logging.error(f"Error loading or processing course data: {e}")
-        raise
+        return df
+    except Exception as e:
+        logging.error(f"Error loading or processing course data: {e}")
+        raise
 
 
 # --- Timetable Initialization ---
 
 def initialize_timetable(departments, semesters_by_dept):
-    """Create empty timetable structures for all department-semester combinations."""
-    timetables = {}
-    for dept in departments:
-        # Ensure semesters_by_dept[dept] is iterable
-        dept_semesters = semesters_by_dept.get(dept, [])
-        if not hasattr(dept_semesters, '__iter__'):
-            logging.warning(f"Semesters for department {dept} not found or not iterable. Skipping.")
-            continue
+    """Create empty timetable structures for all department-semester combinations."""
+    timetables = {}
+    for dept in departments:
+        # Ensure semesters_by_dept[dept] is iterable
+        dept_semesters = semesters_by_dept.get(dept, [])
+        if not hasattr(dept_semesters, '__iter__'):
+            logging.warning(f"Semesters for department {dept} not found or not iterable. Skipping.")
+            continue
 
-        for sem in dept_semesters:
-            key = f"{dept}_{sem}"
-            # Create a 2D list: [day][slot]
-            # Initialize with default empty slot structure, including a list for rooms
-            timetables[key] = [
-                [
-                    {'type': None, 'course': None, 'code': None, 'rooms': [], 'prof': None, 'span': 0, 'connector': None, 'basket': None}
-                    for _ in range(NUM_SLOTS_PER_DAY) # Use the calculated total number of slots
-                ]
-                for _ in range(len(DAYS)) # For each day of the week
-            ]
-            logging.debug(f"Initialized timetable structure for {key}")
-    return timetables
+        for sem in dept_semesters:
+            key = f"{dept}_{sem}"
+            # Create a 2D list: [day][slot]
+            # Initialize with default empty slot structure, including a list for rooms
+            timetables[key] = [
+                [
+                    {'type': None, 'course': None, 'code': None, 'rooms': [], 'prof': None, 'span': 0, 'connector': None, 'basket': None}
+                    for _ in range(NUM_SLOTS_PER_DAY) # Use the calculated total number of slots
+                ]
+                for _ in range(len(TimeTableConfig.DAYS)) # For each day of the week
+            ]
+            logging.debug(f"Initialized timetable structure for {key}")
+    return timetables
 
 # --- Scheduling Helper Functions ---
 
 def get_lab_type(department):
-    """Return lab type based on department."""
-    return LAB_TYPES.get(department.upper(), 'COMPUTER_LAB')
+    """Return lab type based on department."""
+    return TimeTableConfig.LAB_TYPES.get(department.upper(), 'COMPUTER_LAB')
 
 def is_slot_range_valid(start_slot_index, num_slots):
-    """Check if a range of slots is valid (within day, no breaks)."""
-    if start_slot_index < 0 or start_slot_index + num_slots > NUM_SLOTS_PER_DAY:
+    """Check if a range of slots is valid (within day, no breaks)."""
+    if start_slot_index < 0 or start_slot_index + num_slots > NUM_SLOTS_PER_DAY:
         return False
-    for i in range(num_slots):
-        if ALL_SLOTS[start_slot_index + i]['is_break']:
+    for i in range(num_slots):
+        if ALL_SLOTS[start_slot_index + i]['is_break']:
             return False
-    return True
+    return True
 
 def check_availability(schedule, key, day_index, start_slot_index, num_slots):
-    """Check if a resource (prof, room, group) is free."""
+    """Check if a resource (prof, room, group) is free."""
     # Check if the primary key exists in the schedule
     if key not in schedule:
         return True # Resource not yet scheduled, so available
@@ -229,27 +234,27 @@ def check_availability(schedule, key, day_index, start_slot_index, num_slots):
     if day_index not in schedule[key]:
         return True # Resource not scheduled on this day, so available
 
-    day_schedule_slots = schedule[key][day_index] # This should be a set of busy slot indices
+    day_schedule_slots = schedule[key][day_index] # This should be a set of busy slot indices
 
-    for i in range(num_slots):
-        if (start_slot_index + i) in day_schedule_slots:
+    for i in range(num_slots):
+        if (start_slot_index + i) in day_schedule_slots:
             return False # Slot is busy
-    return True # All slots in range are free
+    return True # All slots in range are free
 
 def book_slot(schedule, key, day_index, start_slot_index, num_slots):
-    """Mark slots as busy for a resource."""
-    if key not in schedule:
+    """Mark slots as busy for a resource."""
+    if key not in schedule:
         schedule[key] = {}
-    if day_index not in schedule[key]:
+    if day_index not in schedule[key]:
         schedule[key][day_index] = set() # Use a set for efficient lookup
 
-    for i in range(num_slots):
-        schedule[key][day_index].add(start_slot_index + i)
+    for i in range(num_slots):
+        schedule[key][day_index].add(start_slot_index + i)
 
 
 def find_available_rooms(classrooms, required_type, required_capacity, day_index, start_slot_index, num_slots, classroom_schedule, num_rooms=1, excluded_rooms=None):
-    """Find suitable and available room(s), excluding specified rooms."""
-    if excluded_rooms is None: excluded_rooms = set()
+    """Find suitable and available room(s), excluding specified rooms."""
+    if excluded_rooms is None: excluded_rooms = set()
     found_rooms = []
     current_excluded = set(excluded_rooms) # Copy to add rooms found within this call
 
@@ -278,18 +283,13 @@ def find_available_rooms(classrooms, required_type, required_capacity, day_index
 # --- Connector and Basket Grouping ---
 
 def build_connector_groups(courses_df):
-    """Group courses by class_connector, calculate combined needs."""
-    connector_groups = defaultdict(lambda: {
-        'connector_id': None, # Explicitly store the connector ID
-        'courses': [], # List of original course data dicts
-        'total_enrollment': 0,
-        'professor': None, # Assumes one professor for the group
-        'participating_groups': set(), # Store dept_sem keys
-        'L_sessions_needed': 0,
-        'T_sessions_needed': 0,
-        'P_sessions_needed': 0,
-        'L_sessions_scheduled': 0,
-        'T_sessions_scheduled': 0,
+    """Group courses by class_connector, calculate combined needs."""
+    connector_groups = defaultdict(lambda: {
+        'connector_id': None, # Explicitly store the connector ID
+        'courses': [], # List of original course data dicts
+        'total_enrollment': 0,
+        'professor': None, # Assumes one professor for the group
+        'participating_groups': set(), # Store dept_sem keys
         'P_sessions_scheduled': 0,
         'failed_sessions': [], # e.g., [{'type': 'L', 'count': 1}]
         'is_elective_connector': False, # Track if it's for electives
