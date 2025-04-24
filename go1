@@ -1,0 +1,652 @@
+# Required libraries: pandas, openpyxl
+# Install them if you don't have them: pip install pandas openpyxl
+
+import os
+import pandas as pd
+from datetime import datetime, time, timedelta
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+import logging
+import random
+import math
+from collections import defaultdict
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Configuration ---
+DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+START_TIME = time(9, 0)
+END_TIME = time(18, 30) # Includes the end time, so last slot starts at 18:00
+LUNCH_START = time(13, 0)
+LUNCH_END = time(14, 30) # Lunch break ends, classes can start at 14:30
+MORNING_BREAK_START = time(10, 30)
+MORNING_BREAK_END = time(11, 0)
+SLOT_DURATION_MINUTES = 30
+
+# Durations in number of 30-min slots
+LECTURE_SLOTS = 3  # 1.5 hours
+LAB_SLOTS = 4      # 2 hours
+TUTORIAL_SLOTS = 2 # 1 hour
+
+MAX_SCHEDULING_ATTEMPTS = 1000 # Attempts per session before giving up
+
+# Lab type mapping by department
+LAB_TYPES = {
+    'CSE': 'COMPUTER_LAB',
+    'DSAI': 'COMPUTER_LAB',
+    'ECE': 'HARDWARE_LAB'
+}
+
+# --- Time Slot Generation ---
+def generate_time_slots():
+    """Generate all possible 30-min time slots in a day, skipping breaks."""
+    slots = []
+    slot_details = []
+    current_time = datetime.combine(datetime.today(), START_TIME)
+    end_datetime = datetime.combine(datetime.today(), END_TIME)
+    slot_index = 0
+    while current_time < end_datetime:
+        start = current_time.time()
+        end = (current_time + timedelta(minutes=SLOT_DURATION_MINUTES)).time()
+
+        is_break = False
+        if LUNCH_START <= start < LUNCH_END:
+            is_break = True
+        if MORNING_BREAK_START <= start < MORNING_BREAK_END:
+            is_break = True
+
+        slot_label = f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+        slots.append({
+             "index": slot_index,
+             "label": slot_label,
+             "start_time": start,
+             "end_time": end,
+             "is_break": is_break
+        })
+        if not is_break:
+             slot_details.append({"label": slot_label, "index": slot_index})
+
+        current_time += timedelta(minutes=SLOT_DURATION_MINUTES)
+        slot_index += 1
+    return slots, slot_details # Return all slots including breaks, and details of schedulable slots
+
+ALL_SLOTS, SCHEDULABLE_SLOTS = generate_time_slots()
+NUM_SLOTS_PER_DAY = len(ALL_SLOTS)
+
+# --- Data Loading ---
+def load_classroom_data(file_path='Classrooms.csv'):
+    """Load classroom data from CSV file, add priority."""
+    if not os.path.exists(file_path):
+        logging.error(f"Classrooms data not found at {file_path}")
+        raise FileNotFoundError(f"Classrooms data not found at {file_path}")
+
+    try:
+        df = pd.read_csv(file_path)
+        df = df.dropna(subset=['Classroom']) # Remove rows where Classroom is NaN
+        df['Capacity'] = pd.to_numeric(df['Capacity'], errors='coerce').fillna(0).astype(int)
+        df['Type'] = df['Type'].astype(str).str.upper() # Standardize type
+
+        # Prioritize larger rooms and specific lecture halls
+        df['Priority'] = df.apply(
+             lambda row: 1 if row['Capacity'] >= 100 and 'LECTURE' in row['Type']
+             else 2 if 'LECTURE' in row['Type']
+             else 3 if 'LAB' in row['Type']
+             else 4, axis=1
+        )
+        # Sort by priority (lower is better), then capacity (higher is better)
+        return df.sort_values(['Priority', 'Capacity'], ascending=[True, False]).to_dict('records')
+    except Exception as e:
+        logging.error(f"Error loading or processing classroom data: {e}")
+        raise
+
+def load_course_data(file_path='Semester_courses.csv'):
+    """Load course data from CSV file, clean and calculate needed slots."""
+    if not os.path.exists(file_path):
+        logging.error(f"Course data not found at {file_path}")
+        raise FileNotFoundError(f"Course data not found at {file_path}")
+
+    try:
+        df = pd.read_csv(file_path)
+        # Drop rows where essential info like Course Code or Department is missing
+        df = df.dropna(subset=['Department', 'Semester', 'Course Code', 'Course Name', 'Faculty'])
+        df['Semester'] = df['Semester'].astype(str)
+        df['Enrolled_students'] = pd.to_numeric(df['Enrolled_students'], errors='coerce').fillna(0).astype(int)
+        df['L'] = pd.to_numeric(df['L'], errors='coerce').fillna(0)
+        df['T'] = pd.to_numeric(df['T'], errors='coerce').fillna(0)
+        df['P'] = pd.to_numeric(df['P'], errors='coerce').fillna(0)
+        df['class_connector'] = df['class_connector'].astype(str).replace('nan', '').str.strip()
+        df['Faculty'] = df['Faculty'].astype(str).str.strip()
+
+        # Calculate required weekly slots for L, T, P
+        # Assuming L=3 means 3 hours -> two 1.5hr (3-slot) sessions
+        # Assuming T=1 means 1 hour -> one 1hr (2-slot) session
+        # Assuming P=2 means 2 hours -> one 2hr (4-slot) session
+        df['L_sessions_needed'] = df['L'].apply(lambda x: math.ceil(x / 1.5) if LECTURE_SLOTS > 0 else 0)
+        df['T_sessions_needed'] = df['T'].apply(lambda x: math.ceil(x / 1.0) if TUTORIAL_SLOTS > 0 else 0) # T usually 1 hr
+        df['P_sessions_needed'] = df['P'].apply(lambda x: math.ceil(x / 2.0) if LAB_SLOTS > 0 else 0) # P usually 2 hr
+
+        # Add unique identifier for each course instance (dept+sem+code)
+        df['unique_id'] = df['Department'] + "_" + df['Semester'] + "_" + df['Course Code'] + "_" + df['Course Name']
+
+        return df
+    except Exception as e:
+        logging.error(f"Error loading or processing course data: {e}")
+        raise
+
+
+# --- Scheduling Helper Functions ---
+
+def get_lab_type(department):
+    """Return lab type based on department."""
+    return LAB_TYPES.get(department.upper(), 'COMPUTER_LAB') # Default to COMPUTER_LAB
+
+def is_slot_range_valid(start_slot_index, num_slots):
+    """Check if a range of slots is valid (within day, no breaks)."""
+    if start_slot_index + num_slots > len(ALL_SLOTS):
+        return False # Exceeds end of day
+    for i in range(num_slots):
+        slot_index = start_slot_index + i
+        if ALL_SLOTS[slot_index]['is_break']:
+            return False # Overlaps with a break
+    return True
+
+def check_availability(schedule, key, day_index, start_slot_index, num_slots):
+    """Check if a resource (prof, room, group) is free."""
+    if key not in schedule:
+        return True # Resource hasn't been scheduled yet
+    day_schedule = schedule[key].get(day_index, set())
+    for i in range(num_slots):
+        if (start_slot_index + i) in day_schedule:
+            return False # Conflict found
+    return True
+
+def book_slot(schedule, key, day_index, start_slot_index, num_slots):
+    """Mark slots as busy for a resource."""
+    if key not in schedule:
+        schedule[key] = {}
+    if day_index not in schedule[key]:
+        schedule[key][day_index] = set()
+    for i in range(num_slots):
+        schedule[key][day_index].add(start_slot_index + i)
+
+def find_available_room(classrooms, required_type, required_capacity, day_index, start_slot_index, num_slots, classroom_schedule, excluded_rooms=None):
+    """Find a suitable and available room."""
+    if excluded_rooms is None:
+        excluded_rooms = set()
+
+    # Filter rooms by type and capacity
+    potential_rooms = [
+        r for r in classrooms
+        if required_type in r['Type'].upper() and r['Capacity'] >= required_capacity and r['Classroom'] not in excluded_rooms
+    ]
+
+    # Find the first available room (sorted by priority/capacity)
+    for room in potential_rooms:
+        room_id = room['Classroom']
+        if check_availability(classroom_schedule, room_id, day_index, start_slot_index, num_slots):
+            # TODO: Add logic here for the "two lab rooms" requirement if needed.
+            # If required_type is LAB and room['Capacity'] < required_capacity * 1.5 (e.g., need more space):
+            #   Try to find a *second* available lab of the same type simultaneously.
+            #   If found, return both room IDs. This adds significant complexity.
+            return room_id
+    return None # No suitable room found
+
+
+# --- Main Scheduling Logic ---
+
+def initialize_timetable(departments, semesters):
+    """Create empty timetable structures."""
+    timetables = {}
+    for dept in departments:
+        for sem in semesters[dept]:
+             key = f"{dept}_{sem}"
+             timetables[key] = [
+                 [{'type': None, 'course': None, 'room': None, 'prof': None, 'span': 0, 'connector': None} for _ in range(NUM_SLOTS_PER_DAY)]
+                 for _ in range(len(DAYS))
+             ]
+    return timetables
+
+def schedule_course_component(course, session_type, slots_needed, duration, room_type_base,
+                               classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                               course_schedule_status, connector_groups):
+    """Attempt to schedule one session (L, T, or P) for a course or connector group."""
+
+    dept = course['Department']
+    sem = course['Semester']
+    code = course['Course Code']
+    name = course['Course Name']
+    prof = course['Faculty']
+    enrollment = course['Enrolled_students']
+    connector_id = course['class_connector']
+    unique_id = course['unique_id']
+
+    group_key = f"{dept}_{sem}"
+    required_room_type = room_type_base
+
+    # --- Handle Connector Groups ---
+    is_connector_lead = False
+    connected_courses_info = []
+    if connector_id:
+        if connector_id in connector_groups:
+            group_info = connector_groups[connector_id]
+            # Only schedule if this course is the 'lead' (first one processed) for this connector group
+            if group_info['lead_course_id'] == unique_id and not group_info['scheduled']:
+                 is_connector_lead = True
+                 prof = group_info['professor'] # Use the designated professor
+                 enrollment = group_info['total_enrollment'] # Use combined enrollment
+                 connected_courses_info = group_info['courses']
+                 # Check if this session type (L/T/P) is relevant for the connector group
+                 if (session_type == 'L' and group_info['L_sessions_needed'] <= group_info['L_sessions_scheduled']) or \
+                    (session_type == 'T' and group_info['T_sessions_needed'] <= group_info['T_sessions_scheduled']) or \
+                    (session_type == 'P' and group_info['P_sessions_needed'] <= group_info['P_sessions_scheduled']):
+                      return False # This type of session already fully scheduled for the group
+            elif group_info['scheduled']:
+                 # If part of a connector group that's already scheduled, just update status if needed
+                 if session_type == 'L': course_schedule_status[unique_id]['L'] += 1
+                 if session_type == 'T': course_schedule_status[unique_id]['T'] += 1
+                 if session_type == 'P': course_schedule_status[unique_id]['P'] += 1
+                 return True # Already handled
+            else:
+                 return False # Not the lead course, wait for the lead to schedule it
+        else:
+            # Should not happen if connector_groups is built correctly, but handle defensively
+            logging.warning(f"Course {unique_id} has connector ID {connector_id} but not found in connector_groups.")
+            connector_id = None # Treat as standalone if group info is missing
+
+    # --- Handle Regular Courses / Connector Lead ---
+    if room_type_base == 'LAB':
+        required_room_type = get_lab_type(dept) # Get specific lab type
+
+    logging.debug(f"Attempting to schedule {session_type} for {'Connector ' + connector_id if is_connector_lead else unique_id} (Need {slots_needed} slots)")
+
+    attempts = 0
+    scheduled = False
+    while not scheduled and attempts < MAX_SCHEDULING_ATTEMPTS:
+        attempts += 1
+        day_index = random.randrange(len(DAYS))
+        # Pick a random valid starting slot index from the list of schedulable slots
+        schedulable_slot_indices = [s['index'] for s in SCHEDULABLE_SLOTS]
+        if not schedulable_slot_indices:
+             logging.error("No schedulable slots available!")
+             return False # Should not happen
+        start_slot_index = random.choice(schedulable_slot_indices)
+
+
+        # 1. Check if slot range is valid (within day, no breaks)
+        if not is_slot_range_valid(start_slot_index, duration):
+            continue
+
+        # 2. Check Professor Availability
+        if not check_availability(professor_schedule, prof, day_index, start_slot_index, duration):
+            continue
+
+        # 3. Check Group(s) Availability
+        groups_to_check = set([group_key])
+        if is_connector_lead:
+             for c_info in connected_courses_info:
+                 groups_to_check.add(f"{c_info['Department']}_{c_info['Semester']}")
+
+        all_groups_free = True
+        for g_key in groups_to_check:
+             if not check_availability(group_schedule, g_key, day_index, start_slot_index, duration):
+                 all_groups_free = False
+                 break
+        if not all_groups_free:
+            continue
+
+        # 4. Find Available Classroom
+        room_id = find_available_room(classrooms, required_room_type, enrollment, day_index, start_slot_index, duration, classroom_schedule)
+
+        if room_id:
+            # --- Success! Book the slot ---
+            logging.info(f"Scheduled: {session_type} for {'Connector ' + connector_id if is_connector_lead else unique_id} "
+                         f"at {DAYS[day_index]} {ALL_SLOTS[start_slot_index]['label']} in room {room_id} by {prof}")
+
+            # Book resources
+            book_slot(professor_schedule, prof, day_index, start_slot_index, duration)
+            book_slot(classroom_schedule, room_id, day_index, start_slot_index, duration)
+            for g_key in groups_to_check:
+                 book_slot(group_schedule, g_key, day_index, start_slot_index, duration)
+
+            # Update timetable(s)
+            for g_key in groups_to_check:
+                 timetable_entry = timetables[g_key][day_index]
+                 display_name = f"{code} ({session_type})"
+                 if is_connector_lead:
+                     display_name = f"Connector {connector_id}: {name} ({session_type})" # Indicate connector
+
+                 for i in range(duration):
+                     slot_idx = start_slot_index + i
+                     if i == 0:
+                         timetable_entry[slot_idx] = {
+                             'type': session_type,
+                             'course': name, # Could show all course codes for connectors if needed
+                             'code': code, # Keep original code for reference maybe
+                             'room': room_id,
+                             'prof': prof,
+                             'span': duration, # Mark span on the first slot
+                             'connector': connector_id if is_connector_lead else None
+                         }
+                     else:
+                         # Mark subsequent slots as part of the ongoing session
+                          timetable_entry[slot_idx] = {
+                             'type': 'CONT', # Continued slot
+                             'course': name,
+                             'code': code,
+                             'room': room_id,
+                             'prof': prof,
+                             'span': 0,
+                              'connector': connector_id if is_connector_lead else None
+                         }
+
+            # Update schedule status
+            if is_connector_lead:
+                 connector_groups[connector_id][f'{session_type}_sessions_scheduled'] += 1
+                 # Mark all constituent courses as having this session scheduled
+                 for c_info in connected_courses_info:
+                      course_schedule_status[c_info['unique_id']][session_type] += 1
+                 # Mark the group as scheduled if all sessions of this type are done (simplistic check)
+                 if connector_groups[connector_id][f'{session_type}_sessions_scheduled'] >= connector_groups[connector_id][f'{session_type}_sessions_needed']:
+                     pass # May need more robust check if different session types handled separately for connectors
+                 # A basic check to mark the group as 'scheduled' once *any* session is placed. Refine if needed.
+                 # connector_groups[connector_id]['scheduled'] = True # Problematic if L/T/P needs separate scheduling
+
+            else: # Standalone course
+                 course_schedule_status[unique_id][session_type] += 1
+
+            scheduled = True
+            return True # Successfully scheduled this component
+
+    # --- Failed to schedule after attempts ---
+    if not scheduled:
+         logging.warning(f"Could not schedule {session_type} for {'Connector ' + connector_id if is_connector_lead else unique_id} after {attempts} attempts.")
+         if is_connector_lead:
+             connector_groups[connector_id]['failed_sessions'].append(session_type)
+         else:
+             course_schedule_status[unique_id]['failed'].append(session_type)
+    return False
+
+
+def build_connector_groups(courses_df):
+    """Group courses by class_connector."""
+    connector_groups = defaultdict(lambda: {
+        'courses': [],
+        'total_enrollment': 0,
+        'professor': None,
+        'lead_course_id': None,
+        'scheduled': False, # Tracks if the group has been placed on the timetable
+        'L_sessions_needed': 0,
+        'T_sessions_needed': 0,
+        'P_sessions_needed': 0,
+        'L_sessions_scheduled': 0,
+        'T_sessions_scheduled': 0,
+        'P_sessions_scheduled': 0,
+        'failed_sessions': []
+    })
+
+    for _, course in courses_df.iterrows():
+        connector_id = course['class_connector']
+        if connector_id:
+            unique_id = course['unique_id']
+            group = connector_groups[connector_id]
+
+            course_info = course.to_dict()
+            group['courses'].append(course_info)
+            group['total_enrollment'] += course['Enrolled_students']
+
+            # Assume first course encountered for a connector defines the prof and lead
+            if group['professor'] is None:
+                group['professor'] = course['Faculty']
+                group['lead_course_id'] = unique_id
+                # Assume connector classes primarily follow Lecture/Tutorial structure
+                # Use the L/T/P needs of the *lead* course for the whole group
+                # This might need refinement based on specific rules for connectors
+                group['L_sessions_needed'] = course['L_sessions_needed']
+                group['T_sessions_needed'] = course['T_sessions_needed']
+                group['P_sessions_needed'] = course['P_sessions_needed'] # Often 0 for connectors
+
+    # Convert back to regular dict if needed, though defaultdict is fine
+    return dict(connector_groups)
+
+# --- Output Generation ---
+def export_to_excel(timetables, course_schedule_status, connector_groups, filename="timetable_output.xlsx"):
+    """Export the generated timetables and summary to an Excel file."""
+    wb = Workbook()
+    wb.remove(wb.active) # Remove default sheet
+
+    header_font = Font(bold=True)
+    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    fill_lecture = PatternFill(start_color="ADD8E6", end_color="ADD8E6", fill_type="solid") # Light Blue
+    fill_lab = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid") # Light Green
+    fill_tutorial = PatternFill(start_color="FFFFE0", end_color="FFFFE0", fill_type="solid") # Light Yellow
+    fill_connector = PatternFill(start_color="FFDAB9", end_color="FFDAB9", fill_type="solid") # Peach
+    fill_cont = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid") # Light Grey
+
+    slot_labels = [slot['label'] for slot in ALL_SLOTS]
+
+    # Create sheets for each department/semester
+    for key, timetable in timetables.items():
+        ws = wb.create_sheet(title=key.replace('_', ' '))
+        ws.cell(row=1, column=1, value="Time Slot").font = header_font
+        ws.column_dimensions['A'].width = 15
+
+        # Write day headers
+        for d_idx, day in enumerate(DAYS):
+            ws.cell(row=1, column=2 + d_idx, value=day).font = header_font
+            ws.column_dimensions[chr(ord('B') + d_idx)].width = 30
+
+        # Write time slots and schedule data
+        for r_idx, slot_label in enumerate(slot_labels):
+             slot_index = ALL_SLOTS[r_idx]['index'] # Get the original index
+             ws.cell(row=r_idx + 2, column=1, value=slot_label).alignment = center_alignment
+
+             if ALL_SLOTS[r_idx]['is_break']:
+                  # Mark breaks
+                  for d_idx in range(len(DAYS)):
+                      cell = ws.cell(row=r_idx + 2, column=2 + d_idx, value="BREAK")
+                      cell.alignment = center_alignment
+                      cell.font = Font(italic=True)
+                      cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid") # Grey
+                  continue # Skip scheduling data for break rows
+
+             # Check if this slot_index exists in the timetable structure
+             for d_idx in range(len(DAYS)):
+                cell_data = timetable[d_idx][slot_index] # Use original index here
+                cell = ws.cell(row=r_idx + 2, column=2 + d_idx)
+                cell.alignment = center_alignment
+
+                if cell_data['type'] and cell_data['type'] != 'CONT':
+                    # Format: Course Name (Code)\nProf\nRoom [Connector ID]
+                    connector_tag = f"\nConnector: {cell_data['connector']}" if cell_data['connector'] else ""
+                    cell.value = f"{cell_data['course']} ({cell_data['code']})\n{cell_data['prof']}\n{cell_data['room']}{connector_tag}"
+
+                    # Apply fill based on type
+                    if cell_data['connector']:
+                         cell.fill = fill_connector
+                    elif cell_data['type'] == 'L':
+                         cell.fill = fill_lecture
+                    elif cell_data['type'] == 'P':
+                         cell.fill = fill_lab
+                    elif cell_data['type'] == 'T':
+                         cell.fill = fill_tutorial
+
+                    # Merge cells if span > 1
+                    if cell_data['span'] > 1:
+                         ws.merge_cells(start_row=r_idx + 2, start_column=2 + d_idx,
+                                        end_row=r_idx + 2 + cell_data['span'] - 1, end_column=2 + d_idx)
+
+                elif cell_data['type'] == 'CONT':
+                    # Merged cell handles the display, maybe add a light grey fill to continued slots if not merged visually
+                    # cell.fill = fill_cont # Optional: color continued cells
+                    pass # Already handled by merge or just empty
+
+
+    # Create Summary Sheet
+    ws_summary = wb.create_sheet(title="Scheduling Summary")
+    ws_summary.append(["Department", "Semester", "Course Code", "Course Name", "Type", "Required", "Scheduled", "Status", "Details"])
+    ws_summary.column_dimensions['D'].width = 40
+    ws_summary.column_dimensions['I'].width = 50
+
+    # Add individual course status
+    all_courses_df = load_course_data() # Reload for clean data
+    for unique_id, status in course_schedule_status.items():
+        # Find the original course details
+        course_details = all_courses_df[all_courses_df['unique_id'] == unique_id].iloc[0]
+
+        for session_type, needed_key, scheduled_key in [('L', 'L_sessions_needed', 'L'), ('T', 'T_sessions_needed', 'T'), ('P', 'P_sessions_needed', 'P')]:
+             needed = course_details[needed_key]
+             scheduled_count = status[session_type]
+             if needed > 0:
+                 stat = "OK" if scheduled_count >= needed else "Partial" if scheduled_count > 0 else "Failed"
+                 details = ""
+                 if session_type in status['failed']:
+                     stat = "Failed"
+                     details = f"Could not schedule {needed - scheduled_count} {session_type} session(s)."
+                 if course_details['class_connector'] and course_details['class_connector'] in connector_groups:
+                      details += f" Part of Connector Group {course_details['class_connector']}."
+
+
+                 ws_summary.append([
+                     course_details['Department'], course_details['Semester'], course_details['Course Code'],
+                     course_details['Course Name'], session_type, needed, scheduled_count, stat, details
+                 ])
+
+    # Add connector group status summary
+    ws_summary.append([]) # Spacer row
+    ws_summary.append(["Connector Group Summary"])
+    ws_summary.append(["Connector ID", "Courses", "Professor", "Enrollment", "L Status", "T Status", "P Status", "Scheduling Notes"])
+    for conn_id, group_info in connector_groups.items():
+         course_list = ", ".join([f"{c['Course Code']}({c['Department']}_{c['Semester']})" for c in group_info['courses']])
+         l_stat = f"{group_info['L_sessions_scheduled']}/{group_info['L_sessions_needed']}"
+         t_stat = f"{group_info['T_sessions_scheduled']}/{group_info['T_sessions_needed']}"
+         p_stat = f"{group_info['P_sessions_scheduled']}/{group_info['P_sessions_needed']}"
+         notes = f"Failed to schedule: {', '.join(group_info['failed_sessions'])}" if group_info['failed_sessions'] else "All scheduled OK"
+
+         ws_summary.append([
+             conn_id, course_list, group_info['professor'], group_info['total_enrollment'],
+             l_stat, t_stat, p_stat, notes
+         ])
+
+
+    # Save the workbook
+    try:
+        wb.save(filename)
+        logging.info(f"Timetable successfully exported to {filename}")
+    except Exception as e:
+        logging.error(f"Error saving Excel file: {e}")
+
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    logging.info("Starting timetable generation...")
+
+    try:
+        # Load data
+        logging.info("Loading classroom data...")
+        classrooms = load_classroom_data('Classrooms.csv')
+        logging.info("Loading course data...")
+        courses_df = load_course_data('Semester_courses.csv')
+
+        # Identify unique departments and semesters
+        departments = courses_df['Department'].unique()
+        semesters_by_dept = courses_df.groupby('Department')['Semester'].unique().to_dict()
+
+        # Initialize schedules and timetable structure
+        professor_schedule = {} # {prof: {day_index: set(slot_indices)}}
+        classroom_schedule = {} # {room_id: {day_index: set(slot_indices)}}
+        group_schedule = {}     # {dept_sem_key: {day_index: set(slot_indices)}}
+        timetables = initialize_timetable(departments, semesters_by_dept)
+
+        # Track scheduled sessions per course
+        course_schedule_status = {
+            row['unique_id']: {'L': 0, 'T': 0, 'P': 0, 'failed': []}
+            for _, row in courses_df.iterrows()
+        }
+
+        # Identify and preprocess connector groups
+        logging.info("Identifying connector groups...")
+        connector_groups = build_connector_groups(courses_df)
+        logging.info(f"Found {len(connector_groups)} connector groups.")
+
+        # --- Scheduling Strategy ---
+        # 1. Schedule Connector Groups first (most constrained)
+        # 2. Schedule Labs (specific rooms, long duration)
+        # 3. Schedule Tutorials
+        # 4. Schedule Lectures
+
+        logging.info("Scheduling connector groups...")
+        connector_leads = [courses_df[courses_df['unique_id'] == group['lead_course_id']].iloc[0]
+                           for group in connector_groups.values() if group['lead_course_id']]
+
+        for course_series in connector_leads:
+             course = course_series.to_dict()
+             unique_id = course['unique_id']
+             connector_id = course['class_connector']
+             group_info = connector_groups[connector_id]
+
+             # Schedule L, T, P for the connector group lead (handled by schedule_course_component)
+             for session_type, needed, scheduled, duration, room_type in [
+                 ('L', group_info['L_sessions_needed'], group_info['L_sessions_scheduled'], LECTURE_SLOTS, 'LECTURE_ROOM'),
+                 ('T', group_info['T_sessions_needed'], group_info['T_sessions_scheduled'], TUTORIAL_SLOTS, 'LECTURE_ROOM'),
+                 ('P', group_info['P_sessions_needed'], group_info['P_sessions_scheduled'], LAB_SLOTS, 'LAB') # Assumes P for connectors needs lab
+             ]:
+                 required_sessions = needed
+                 for _ in range(required_sessions - scheduled): # Schedule remaining needed sessions
+                      if duration > 0: # Only schedule if duration is valid
+                          schedule_course_component(course, session_type, needed, duration, room_type,
+                                                     classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                                     course_schedule_status, connector_groups)
+
+
+        logging.info("Scheduling remaining Labs, Tutorials, and Lectures...")
+        # Iterate through courses, prioritizing those not part of already-processed connectors
+        for _, course_series in courses_df.iterrows():
+            course = course_series.to_dict()
+            unique_id = course['unique_id']
+            connector_id = course['class_connector']
+
+            # Skip if this is part of a connector group (already handled by lead)
+            if connector_id and connector_id in connector_groups:
+                 # We might need to ensure status is updated even if not lead, but scheduling is done by lead
+                 # Let's rely on the status update within schedule_course_component for now.
+                 continue
+
+
+            # Schedule Labs (P)
+            needed = course['P_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['P']
+            for _ in range(needed - scheduled_count):
+                 if LAB_SLOTS > 0:
+                    schedule_course_component(course, 'P', needed, LAB_SLOTS, 'LAB',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+            # Schedule Tutorials (T)
+            needed = course['T_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['T']
+            for _ in range(needed - scheduled_count):
+                 if TUTORIAL_SLOTS > 0:
+                    schedule_course_component(course, 'T', needed, TUTORIAL_SLOTS, 'LECTURE_ROOM',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+            # Schedule Lectures (L)
+            needed = course['L_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['L']
+            for _ in range(needed - scheduled_count):
+                 if LECTURE_SLOTS > 0:
+                    schedule_course_component(course, 'L', needed, LECTURE_SLOTS, 'LECTURE_ROOM',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+
+        # Export results
+        logging.info("Exporting timetable to Excel...")
+        export_to_excel(timetables, course_schedule_status, connector_groups, filename="timetable_generated.xlsx")
+
+    except FileNotFoundError as e:
+        logging.error(f"Input file not found: {e}. Please ensure 'Classrooms.csv' and 'Semester_courses.csv' are in the same directory.")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during timetable generation: {e}", exc_info=True)
+    finally:
+        logging.info("Timetable generation completed.")

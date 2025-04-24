@@ -1,0 +1,846 @@
+# Required libraries: pandas, openpyxl
+# Install them if you don't have them: pip install pandas openpyxl
+
+import os
+import pandas as pd
+from datetime import datetime, time, timedelta
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+import logging
+import random
+import math
+from collections import defaultdict
+import copy # Needed for deep copying schedule states
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Configuration ---
+DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+START_TIME = time(9, 0)
+END_TIME = time(18, 30) # Includes the end time, so last slot starts at 18:00
+LUNCH_START = time(13, 0)
+LUNCH_END = time(14, 30) # Lunch break ends, classes can start at 14:30
+MORNING_BREAK_START = time(10, 30)
+MORNING_BREAK_END = time(11, 0)
+SLOT_DURATION_MINUTES = 30
+
+# Durations in number of 30-min slots
+LECTURE_SLOTS = 3  # 1.5 hours
+LAB_SLOTS = 4      # 2 hours
+TUTORIAL_SLOTS = 2 # 1 hour
+
+MAX_SCHEDULING_ATTEMPTS_BASKET = 200 # Attempts for finding a common basket slot
+MAX_SCHEDULING_ATTEMPTS_COURSE = 500 # Attempts per regular session
+
+# Lab type mapping by department
+LAB_TYPES = {
+    'CSE': 'COMPUTER_LAB',
+    'DSAI': 'COMPUTER_LAB',
+    'ECE': 'HARDWARE_LAB'
+}
+
+# --- Time Slot Generation ---
+def generate_time_slots():
+    """Generate all possible 30-min time slots in a day, including breaks."""
+    slots = []
+    schedulable_details = []
+    current_time = datetime.combine(datetime.today(), START_TIME)
+    end_datetime = datetime.combine(datetime.today(), END_TIME)
+    slot_index = 0
+    while current_time < end_datetime:
+        start = current_time.time()
+        end = (current_time + timedelta(minutes=SLOT_DURATION_MINUTES)).time()
+
+        is_break = False
+        if LUNCH_START <= start < LUNCH_END:
+            is_break = True
+        if MORNING_BREAK_START <= start < MORNING_BREAK_END:
+            is_break = True
+
+        slot_label = f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
+        slots.append({
+             "index": slot_index,
+             "label": slot_label,
+             "start_time": start,
+             "end_time": end,
+             "is_break": is_break
+        })
+        if not is_break:
+             schedulable_details.append({"label": slot_label, "index": slot_index})
+
+        current_time += timedelta(minutes=SLOT_DURATION_MINUTES)
+        slot_index += 1
+    # Ensure consistent number of slots per day for indexing
+    num_slots_per_day = slot_index
+    return slots, schedulable_details, num_slots_per_day
+
+ALL_SLOTS, SCHEDULABLE_SLOTS, NUM_SLOTS_PER_DAY = generate_time_slots()
+SCHEDULABLE_SLOT_INDICES = [s['index'] for s in SCHEDULABLE_SLOTS]
+
+
+# --- Data Loading ---
+def load_classroom_data(file_path='Classrooms.csv'):
+    """Load classroom data from CSV file, add priority."""
+    if not os.path.exists(file_path):
+        logging.error(f"Classrooms data not found at {file_path}")
+        raise FileNotFoundError(f"Classrooms data not found at {file_path}")
+
+    try:
+        df = pd.read_csv(file_path)
+        df = df.dropna(subset=['Classroom'])
+        df['Capacity'] = pd.to_numeric(df['Capacity'], errors='coerce').fillna(0).astype(int)
+        df['Type'] = df['Type'].astype(str).str.upper()
+
+        df['Priority'] = df.apply(
+             lambda row: 1 if row['Capacity'] >= 100 and 'LECTURE' in row['Type']
+             else 2 if 'LECTURE' in row['Type']
+             else 3 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type']) and row['Capacity'] >= 40 # Prioritize larger labs slightly
+             else 4 if ('COMPUTER_LAB' in row['Type'] or 'HARDWARE_LAB' in row['Type'])
+             else 5, axis=1 # Other types lower priority
+        )
+        return df.sort_values(['Priority', 'Capacity'], ascending=[True, False]).to_dict('records')
+    except Exception as e:
+        logging.error(f"Error loading or processing classroom data: {e}")
+        raise
+
+def load_course_data(file_path='Semester_courses.csv'):
+    """Load course data from CSV file, clean and calculate needed slots."""
+    if not os.path.exists(file_path):
+        logging.error(f"Course data not found at {file_path}")
+        raise FileNotFoundError(f"Course data not found at {file_path}")
+
+    try:
+        df = pd.read_csv(file_path)
+        df = df.dropna(subset=['Department', 'Semester', 'Course Code', 'Course Name', 'Faculty'])
+        df['Semester'] = df['Semester'].astype(str)
+        df['Enrolled_students'] = pd.to_numeric(df['Enrolled_students'], errors='coerce').fillna(25).astype(int) # Default enrollment if missing
+        df['L'] = pd.to_numeric(df['L'], errors='coerce').fillna(0)
+        df['T'] = pd.to_numeric(df['T'], errors='coerce').fillna(0)
+        df['P'] = pd.to_numeric(df['P'], errors='coerce').fillna(0)
+        df['class_connector'] = df['class_connector'].astype(str).replace('nan', '').str.strip()
+        df['Faculty'] = df['Faculty'].astype(str).str.strip()
+
+        # Identify electives (Basket courses) - check Course Code for B1/B2 etc.
+        df['is_elective'] = df['Course Code'].str.contains(r'^B[1-4]', regex=True) | df['Course Name'].str.contains(r'^B[1-4]', regex=True) # Check code or name
+        df['basket_code'] = df['Course Code'].str.extract(r'^(B[1-4])', expand=False).fillna('')
+        # If basket code not in Course Code, try Course Name (e.g., "B1(ASD151/...)")
+        mask = (df['basket_code'] == '') & df['is_elective']
+        df.loc[mask, 'basket_code'] = df.loc[mask, 'Course Name'].str.extract(r'^(B[1-4])', expand=False).fillna('')
+
+
+        # Calculate required weekly slots
+        df['L_sessions_needed'] = df['L'].apply(lambda x: math.ceil(x / 1.5) if LECTURE_SLOTS > 0 else 0)
+        df['T_sessions_needed'] = df['T'].apply(lambda x: math.ceil(x / 1.0) if TUTORIAL_SLOTS > 0 else 0)
+        df['P_sessions_needed'] = df['P'].apply(lambda x: math.ceil(x / 2.0) if LAB_SLOTS > 0 else 0)
+
+        # Unique identifier
+        df['unique_id'] = df.apply(lambda row: f"{row['Department']}_{row['Semester']}_{row['Course Code']}_{row['Course Name']}_{row['Faculty']}", axis=1)
+
+        return df
+    except Exception as e:
+        logging.error(f"Error loading or processing course data: {e}")
+        raise
+
+
+# --- Timetable Initialization ---
+
+def initialize_timetable(departments, semesters_by_dept):
+    """Create empty timetable structures for all department-semester combinations."""
+    timetables = {}
+    for dept in departments:
+        # Ensure semesters_by_dept[dept] is iterable (like a list or array)
+        dept_semesters = semesters_by_dept.get(dept, [])
+        if not hasattr(dept_semesters, '__iter__'):
+             logging.warning(f"Semesters for department {dept} not found or not iterable. Skipping.")
+             continue
+
+        for sem in dept_semesters:
+             key = f"{dept}_{sem}"
+             # Create a 2D list: [day][slot]
+             # Initialize with default empty slot structure
+             timetables[key] = [
+                 [
+                     {'type': None, 'course': None, 'code': None, 'room': None, 'prof': None, 'span': 0, 'connector': None, 'basket': None}
+                     for _ in range(NUM_SLOTS_PER_DAY) # Use the calculated number of slots
+                 ]
+                 for _ in range(len(DAYS)) # For each day of the week
+             ]
+             logging.debug(f"Initialized timetable structure for {key}")
+    return timetables
+
+# --- Scheduling Helper Functions ---
+
+def get_lab_type(department):
+    """Return lab type based on department."""
+    return LAB_TYPES.get(department.upper(), 'COMPUTER_LAB')
+
+def is_slot_range_valid(start_slot_index, num_slots):
+    """Check if a range of slots is valid (within day, no breaks)."""
+    if start_slot_index + num_slots > NUM_SLOTS_PER_DAY: return False
+    for i in range(num_slots):
+        if ALL_SLOTS[start_slot_index + i]['is_break']: return False
+    return True
+
+def check_availability(schedule, key, day_index, start_slot_index, num_slots):
+    """Check if a resource (prof, room, group) is free."""
+    day_schedule = schedule.get(key, {}).get(day_index, set())
+    for i in range(num_slots):
+        if (start_slot_index + i) in day_schedule: return False
+    return True
+
+def book_slot(schedule, key, day_index, start_slot_index, num_slots):
+    """Mark slots as busy for a resource."""
+    if key not in schedule: schedule[key] = {}
+    if day_index not in schedule[key]: schedule[key][day_index] = set()
+    for i in range(num_slots):
+        schedule[key][day_index].add(start_slot_index + i)
+
+def find_available_room(classrooms, required_type, required_capacity, day_index, start_slot_index, num_slots, classroom_schedule, excluded_rooms=None):
+    """Find a suitable and available room, excluding specified rooms."""
+    if excluded_rooms is None: excluded_rooms = set()
+
+    potential_rooms = [
+        r for r in classrooms
+        if required_type in r['Type'].upper() # Match type (LECTURE_ROOM, COMPUTER_LAB, HARDWARE_LAB)
+        and r['Capacity'] >= required_capacity
+        and r['Classroom'] not in excluded_rooms # Exclude already assigned rooms for this slot
+    ]
+
+    for room in potential_rooms:
+        room_id = room['Classroom']
+        if check_availability(classroom_schedule, room_id, day_index, start_slot_index, num_slots):
+            # TODO: Add logic here for the "two lab rooms" requirement if needed.
+            return room_id
+    return None
+
+# --- Connector and Basket Grouping ---
+
+def build_connector_groups(courses_df):
+    """Group courses by class_connector, calculate combined needs."""
+    connector_groups = defaultdict(lambda: {
+        'courses': [], 'total_enrollment': 0, 'professor': None,
+        'lead_course_id': None, 'group_key': None, # Added group_key
+        'participating_groups': set(), # Store dept_sem keys
+        'L_sessions_needed': 0, 'T_sessions_needed': 0, 'P_sessions_needed': 0,
+        'L_sessions_scheduled': 0, 'T_sessions_scheduled': 0, 'P_sessions_scheduled': 0,
+        'failed_sessions': [], 'is_elective_connector': False # Track if it's for electives
+    })
+
+    for _, course in courses_df.iterrows():
+        connector_id = course['class_connector']
+        if connector_id:
+            unique_id = course['unique_id']
+            group = connector_groups[connector_id]
+            group['group_key'] = connector_id # Use connector_id as the key
+
+            course_info = course.to_dict()
+            group['courses'].append(course_info)
+            group['total_enrollment'] += course['Enrolled_students']
+            group['participating_groups'].add(f"{course['Department']}_{course['Semester']}")
+
+            if group['professor'] is None:
+                group['professor'] = course['Faculty']
+                group['lead_course_id'] = unique_id
+                # Use needs of the lead course
+                group['L_sessions_needed'] = course['L_sessions_needed']
+                group['T_sessions_needed'] = course['T_sessions_needed']
+                group['P_sessions_needed'] = course['P_sessions_needed']
+            if course['is_elective']:
+                group['is_elective_connector'] = True # Mark if any course in group is elective
+
+    return dict(connector_groups)
+
+
+def group_courses_by_basket(courses_df, connector_groups):
+    """Group elective courses by basket, identifying connector groups within."""
+    baskets = defaultdict(lambda: {
+        'basket_code': None,
+        'semester_logic_group': None, # e.g., "Sem6" or "Sem2"
+        'participating_groups': set(), # Dept_Sem keys
+        'offerings': [], # List of distinct offerings (standalone course dict or connector group key)
+        'needed_duration': LECTURE_SLOTS, # Assume electives are lectures unless specified otherwise
+        'scheduled': False
+    })
+
+    # Determine logical semester groups for baskets (e.g., 2A/2B -> Sem2, 6A/6B -> Sem6)
+    def get_semester_group(sem):
+        if sem.startswith('2'): return 'Sem2'
+        if sem.startswith('4'): return 'Sem4'
+        if sem.startswith('6'): return 'Sem6'
+        if sem.startswith('8'): return 'Sem8'
+        return sem # Fallback
+
+    for _, course in courses_df[courses_df['is_elective']].iterrows():
+        basket_code = course['basket_code']
+        if not basket_code: continue # Skip if not properly identified as basket
+
+        semester_group = get_semester_group(course['Semester'])
+        basket_key = f"{semester_group}_{basket_code}" # e.g., Sem6_B1
+
+        group = baskets[basket_key]
+        group['basket_code'] = basket_code
+        group['semester_logic_group'] = semester_group
+        group['participating_groups'].add(f"{course['Department']}_{course['Semester']}")
+
+        connector_id = course['class_connector']
+        offering_key = connector_id if connector_id else course['unique_id']
+
+        # Add offering only once per basket group
+        is_new_offering = True
+        for existing_offering in group['offerings']:
+            if isinstance(existing_offering, str) and existing_offering == offering_key: # Connector key
+                is_new_offering = False
+                break
+            if isinstance(existing_offering, dict) and existing_offering['unique_id'] == offering_key: # Standalone course
+                is_new_offering = False
+                break
+
+        if is_new_offering:
+            if connector_id:
+                # Add the connector group key if it exists and involves electives
+                 if connector_id in connector_groups and connector_groups[connector_id]['is_elective_connector']:
+                    group['offerings'].append(connector_id)
+                 else: # Treat as standalone if connector group info missing or not elective related
+                      group['offerings'].append(course.to_dict())
+
+            else: # Standalone elective
+                group['offerings'].append(course.to_dict())
+
+            # TODO: Determine needed duration more accurately if electives have T/P?
+            # For now, assume LECTURE_SLOTS.
+
+    return dict(baskets)
+
+
+# --- Scheduling Functions ---
+
+def schedule_basket_group(basket_key, basket_info, classrooms, connector_groups,
+                         professor_schedule, classroom_schedule, group_schedule, timetables, course_schedule_status):
+    """Attempt to schedule all offerings within a basket simultaneously."""
+    if basket_info['scheduled']: return True # Already done
+
+    logging.info(f"Attempting to schedule Basket Group: {basket_key}")
+
+    duration = basket_info['needed_duration']
+    offerings = basket_info['offerings']
+    participating_dept_sem_groups = basket_info['participating_groups']
+
+    attempts = 0
+    scheduled = False
+    while not scheduled and attempts < MAX_SCHEDULING_ATTEMPTS_BASKET:
+        attempts += 1
+        day_index = random.randrange(len(DAYS))
+        # Pick a random valid starting slot index
+        if not SCHEDULABLE_SLOT_INDICES: return False # Should not happen
+        start_slot_index = random.choice(SCHEDULABLE_SLOT_INDICES)
+
+        # 1. Check if slot range is valid
+        if not is_slot_range_valid(start_slot_index, duration): continue
+
+        # 2. Check ALL participating Department/Semester groups are free
+        all_groups_free = True
+        for group_key in participating_dept_sem_groups:
+            if not check_availability(group_schedule, group_key, day_index, start_slot_index, duration):
+                all_groups_free = False
+                break
+        if not all_groups_free: continue
+
+        # 3. Check availability of ALL professors and find DISTINCT available rooms for each offering
+        temp_prof_bookings = defaultdict(set)
+        temp_room_bookings = defaultdict(lambda: defaultdict(set)) # room -> day -> slots
+        assignments = {} # offering_key -> {'prof': prof, 'room': room_id}
+        possible = True
+        assigned_rooms_in_slot = set() # Keep track of rooms used in *this specific attempt*
+
+        for offering in offerings:
+            offering_key = None
+            prof = None
+            enrollment = 0
+            course_name_for_log = "Unknown"
+            is_connector = False
+
+            if isinstance(offering, str): # It's a connector group key
+                 if offering not in connector_groups:
+                      logging.warning(f"Basket {basket_key} references missing connector group {offering}. Skipping offering.")
+                      possible = False; break # Skip this attempt if data inconsistent
+                 connector_info = connector_groups[offering]
+                 offering_key = offering
+                 prof = connector_info['professor']
+                 enrollment = connector_info['total_enrollment']
+                 course_name_for_log = f"Connector {offering}"
+                 is_connector = True
+            elif isinstance(offering, dict): # Standalone course
+                offering_key = offering['unique_id']
+                prof = offering['Faculty']
+                enrollment = offering['Enrolled_students']
+                course_name_for_log = f"{offering['Course Name']} ({offering['Course Code']})"
+            else: # Should not happen
+                 logging.error(f"Invalid offering type in basket {basket_key}: {offering}")
+                 possible = False; break
+
+            # a. Check Professor availability (considering temp bookings for this slot)
+            prof_free = True
+            for i in range(duration):
+                slot_idx = start_slot_index + i
+                # Check real schedule AND temp bookings for this attempt
+                if slot_idx in professor_schedule.get(prof, {}).get(day_index, set()) or \
+                   slot_idx in temp_prof_bookings.get(prof, set()):
+                    prof_free = False; break
+            if not prof_free:
+                possible = False; break # Prof conflict within this basket attempt
+
+            # b. Find a suitable, available, *distinct* room
+            room_id = find_available_room(classrooms, 'LECTURE_ROOM', enrollment, day_index, start_slot_index, duration, classroom_schedule, excluded_rooms=assigned_rooms_in_slot)
+
+            if room_id:
+                assignments[offering_key] = {'prof': prof, 'room': room_id}
+                assigned_rooms_in_slot.add(room_id)
+                # Temporarily mark prof and room as busy for subsequent checks *within this attempt*
+                for i in range(duration):
+                     slot_idx = start_slot_index + i
+                     temp_prof_bookings[prof].add(slot_idx)
+                     # No need for temp room booking check as find_available_room uses excluded_rooms
+            else:
+                 logging.debug(f"Basket {basket_key} failed: No distinct room for {course_name_for_log} at {DAYS[day_index]} slot {start_slot_index}")
+                 possible = False; break # Cannot find room for this offering
+
+        # 4. If all checks passed, book everything permanently
+        if possible:
+            logging.info(f"Scheduling Basket {basket_key} at {DAYS[day_index]} Slot {start_slot_index}")
+            # Book Dept/Sem Groups
+            for group_key in participating_dept_sem_groups:
+                book_slot(group_schedule, group_key, day_index, start_slot_index, duration)
+
+            # Book Professors, Rooms, and Update Timetables for each assignment
+            for offering_key, assignment_info in assignments.items():
+                prof = assignment_info['prof']
+                room_id = assignment_info['room']
+
+                # Book prof and room permanently
+                book_slot(professor_schedule, prof, day_index, start_slot_index, duration)
+                book_slot(classroom_schedule, room_id, day_index, start_slot_index, duration)
+
+                # Determine which courses/groups this assignment applies to
+                courses_to_update = []
+                session_type = 'L' # Assume electives are Lectures
+                course_name = "Elective"
+                course_code = basket_key
+                connector_id_for_log = None
+
+                if offering_key in connector_groups: # Connector group
+                    connector_info = connector_groups[offering_key]
+                    courses_to_update.extend(connector_info['courses'])
+                    course_name = f"Connector {offering_key}: {connector_info['courses'][0]['Course Name']}" # Use first course name
+                    course_code = connector_info['courses'][0]['Course Code']
+                    connector_id_for_log = offering_key
+                     # Mark connector group sessions as scheduled
+                    connector_info['L_sessions_scheduled'] += 1 # Assuming 1 session per basket run
+                else: # Standalone course (find the dict)
+                    found_course = None
+                    for off in offerings:
+                         if isinstance(off, dict) and off['unique_id'] == offering_key:
+                              found_course = off
+                              break
+                    if found_course:
+                        courses_to_update.append(found_course)
+                        course_name = found_course['Course Name']
+                        course_code = found_course['Course Code']
+
+
+                # Update timetables and course status
+                for course_dict in courses_to_update:
+                     dept_sem_key = f"{course_dict['Department']}_{course_dict['Semester']}"
+                     if dept_sem_key in timetables:
+                          timetable_entry = timetables[dept_sem_key][day_index]
+                          for i in range(duration):
+                               slot_idx = start_slot_index + i
+                               is_first = (i == 0)
+                               entry_type = session_type if is_first else 'CONT'
+                               entry_span = duration if is_first else 0
+
+                               timetable_entry[slot_idx] = {
+                                   'type': entry_type, 'course': course_name, 'code': course_code,
+                                   'room': room_id, 'prof': prof, 'span': entry_span,
+                                   'connector': connector_id_for_log, 'basket': basket_key # Add basket info
+                               }
+                     # Update status
+                     if course_dict['unique_id'] in course_schedule_status:
+                           course_schedule_status[course_dict['unique_id']]['L'] += 1 # Assume L type
+
+            basket_info['scheduled'] = True
+            scheduled = True
+            return True # Successfully scheduled basket
+
+    # Failed to schedule basket
+    if not scheduled:
+         logging.warning(f"Could not schedule Basket Group {basket_key} after {attempts} attempts.")
+    return False
+
+
+def schedule_course_component(course_or_connector_info, session_type, slots_needed, duration, room_type_base,
+                               classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                               course_schedule_status, connector_groups):
+    """Attempt to schedule one session (L, T, or P) for a standalone course or a non-elective connector group."""
+
+    is_connector = 'group_key' in course_or_connector_info # Check if it's a connector group dict
+    is_standalone_course = not is_connector
+
+    if is_connector:
+        group_info = course_or_connector_info
+        connector_id = group_info['group_key']
+        # Skip if this connector group was already handled as part of a basket
+        if group_info.get('is_elective_connector', False):
+             # Check if relevant session was scheduled by basket logic
+             # This check might be too simple if electives need >1 session
+             if session_type == 'L' and group_info['L_sessions_scheduled'] > 0:
+                 return True # Assume basket handled it
+             # Add similar checks for T/P if electives can have them
+
+        prof = group_info['professor']
+        enrollment = group_info['total_enrollment']
+        participating_groups = group_info['participating_groups']
+        log_name = f"Connector {connector_id}"
+        # Check if this session type is already fully scheduled for the group
+        needed_key = f'{session_type}_sessions_needed'
+        scheduled_key = f'{session_type}_sessions_scheduled'
+        if group_info[scheduled_key] >= group_info[needed_key]:
+            return True # Already done for this type
+
+    else: # Standalone course
+        course = course_or_connector_info
+        unique_id = course['unique_id']
+        # Skip if handled by basket
+        if course.get('is_elective', False):
+             if session_type == 'L' and course_schedule_status[unique_id]['L'] > 0:
+                  return True # Assume handled by basket
+
+        prof = course['Faculty']
+        enrollment = course['Enrolled_students']
+        participating_groups = {f"{course['Department']}_{course['Semester']}"}
+        log_name = f"{course['Course Name']} ({course['Course Code']})"
+        # Check if already fully scheduled
+        if course_schedule_status[unique_id][session_type] >= course[f'{session_type}_sessions_needed']:
+            return True
+
+    required_room_type = get_lab_type(course['Department']) if room_type_base == 'LAB' else room_type_base
+
+    logging.debug(f"Attempting to schedule {session_type} for {log_name} (Need {duration} slots)")
+
+    attempts = 0
+    scheduled = False
+    while not scheduled and attempts < MAX_SCHEDULING_ATTEMPTS_COURSE:
+        attempts += 1
+        day_index = random.randrange(len(DAYS))
+        if not SCHEDULABLE_SLOT_INDICES: return False
+        start_slot_index = random.choice(SCHEDULABLE_SLOT_INDICES)
+
+        # 1. Check slot validity
+        if not is_slot_range_valid(start_slot_index, duration): continue
+
+        # 2. Check Professor Availability
+        if not check_availability(professor_schedule, prof, day_index, start_slot_index, duration): continue
+
+        # 3. Check Group(s) Availability
+        all_groups_free = all(check_availability(group_schedule, g_key, day_index, start_slot_index, duration) for g_key in participating_groups)
+        if not all_groups_free: continue
+
+        # 4. Find Available Classroom
+        room_id = find_available_room(classrooms, required_room_type, enrollment, day_index, start_slot_index, duration, classroom_schedule)
+
+        if room_id:
+            # --- Success! Book the slot ---
+            logging.info(f"Scheduled: {session_type} for {log_name} at {DAYS[day_index]} {ALL_SLOTS[start_slot_index]['label']} in room {room_id} by {prof}")
+
+            book_slot(professor_schedule, prof, day_index, start_slot_index, duration)
+            book_slot(classroom_schedule, room_id, day_index, start_slot_index, duration)
+            for g_key in participating_groups:
+                book_slot(group_schedule, g_key, day_index, start_slot_index, duration)
+
+            # Update timetable(s) and status
+            if is_connector:
+                 group_info[scheduled_key] += 1 # Increment connector scheduled count
+                 connector_id_for_log = connector_id
+                 course_name = f"Connector {connector_id}: {group_info['courses'][0]['Course Name']}"
+                 course_code = group_info['courses'][0]['Course Code']
+                 # Update status for all constituent courses
+                 for c_dict in group_info['courses']:
+                      if c_dict['unique_id'] in course_schedule_status:
+                           course_schedule_status[c_dict['unique_id']][session_type] += 1
+            else: # Standalone course
+                 course_schedule_status[unique_id][session_type] += 1
+                 connector_id_for_log = None
+                 course_name = course['Course Name']
+                 course_code = course['Course Code']
+
+            for g_key in participating_groups:
+                 if g_key in timetables:
+                      timetable_entry = timetables[g_key][day_index]
+                      for i in range(duration):
+                           slot_idx = start_slot_index + i
+                           is_first = (i == 0)
+                           entry_type = session_type if is_first else 'CONT'
+                           entry_span = duration if is_first else 0
+                           timetable_entry[slot_idx] = {
+                               'type': entry_type, 'course': course_name, 'code': course_code,
+                               'room': room_id, 'prof': prof, 'span': entry_span,
+                               'connector': connector_id_for_log, 'basket': None # Not scheduled as part of basket directly
+                           }
+
+            scheduled = True
+            return True
+
+    # --- Failed to schedule ---
+    if not scheduled:
+        logging.warning(f"Could not schedule {session_type} for {log_name} after {attempts} attempts.")
+        if is_connector:
+            group_info['failed_sessions'].append(session_type)
+        else:
+            course_schedule_status[unique_id]['failed'].append(session_type)
+    return False
+
+# --- Output Generation (Minor update for Basket coloring) ---
+def export_to_excel(timetables, course_schedule_status, connector_groups, basket_groups, filename="timetable_output.xlsx"):
+    """Export the generated timetables and summary to an Excel file."""
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    header_font = Font(bold=True)
+    center_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    fill_lecture = PatternFill(start_color="ADD8E6", end_color="ADD8E6", fill_type="solid") # Light Blue
+    fill_lab = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")     # Light Green
+    fill_tutorial = PatternFill(start_color="FFFFE0", end_color="FFFFE0", fill_type="solid")# Light Yellow
+    fill_connector = PatternFill(start_color="FFDAB9", end_color="FFDAB9", fill_type="solid")# Peach
+    fill_basket = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")   # Lavender
+    fill_cont = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")     # Light Grey
+    fill_break = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")     # Grey
+
+    slot_labels = [slot['label'] for slot in ALL_SLOTS]
+
+    for key, timetable in timetables.items():
+        ws = wb.create_sheet(title=key.replace('_', ' '))
+        ws.cell(row=1, column=1, value="Time Slot").font = header_font
+        ws.column_dimensions['A'].width = 15
+
+        for d_idx, day in enumerate(DAYS):
+            ws.cell(row=1, column=2 + d_idx, value=day).font = header_font
+            ws.column_dimensions[chr(ord('B') + d_idx)].width = 35 # Increased width
+
+        for r_idx, slot_label in enumerate(slot_labels):
+             slot_info = ALL_SLOTS[r_idx]
+             ws.cell(row=r_idx + 2, column=1, value=slot_label).alignment = center_alignment
+
+             if slot_info['is_break']:
+                  for d_idx in range(len(DAYS)):
+                      cell = ws.cell(row=r_idx + 2, column=2 + d_idx, value="BREAK")
+                      cell.alignment = center_alignment; cell.font = Font(italic=True); cell.fill = fill_break
+                  continue
+
+             for d_idx in range(len(DAYS)):
+                # Ensure accessing valid index
+                if slot_info['index'] < len(timetable[d_idx]):
+                    cell_data = timetable[d_idx][slot_info['index']]
+                    cell = ws.cell(row=r_idx + 2, column=2 + d_idx)
+                    cell.alignment = center_alignment
+
+                    if cell_data and cell_data['type'] and cell_data['type'] != 'CONT':
+                        connector_tag = f"\nConn: {cell_data['connector']}" if cell_data.get('connector') else ""
+                        basket_tag = f"\nBasket: {cell_data['basket']}" if cell_data.get('basket') else ""
+                        cell.value = f"{cell_data['course']} ({cell_data['code']} - {cell_data['type']})\n{cell_data['prof']}\n{cell_data['room']}{connector_tag}{basket_tag}"
+
+                        fill_color = None
+                        if cell_data.get('basket'): fill_color = fill_basket
+                        elif cell_data.get('connector'): fill_color = fill_connector
+                        elif cell_data['type'] == 'L': fill_color = fill_lecture
+                        elif cell_data['type'] == 'P': fill_color = fill_lab
+                        elif cell_data['type'] == 'T': fill_color = fill_tutorial
+                        if fill_color: cell.fill = fill_color
+
+                        if cell_data['span'] > 1:
+                             # Adjust merge calculation if needed based on ALL_SLOTS vs timetable structure
+                             ws.merge_cells(start_row=r_idx + 2, start_column=2 + d_idx,
+                                            end_row=r_idx + 2 + cell_data['span'] - 1, end_column=2 + d_idx)
+
+                    elif cell_data and cell_data['type'] == 'CONT':
+                         pass # Merged cell handles display
+                else:
+                     # Handle cases where the timetable array might be shorter than ALL_SLOTS index (shouldn't happen with init)
+                     ws.cell(row=r_idx + 2, column=2 + d_idx, value="-")
+
+
+    # --- Summary Sheet (Mostly unchanged, verify data sources) ---
+    ws_summary = wb.create_sheet(title="Scheduling Summary")
+    ws_summary.append(["Source", "ID", "Details", "Professor/Courses", "Enrollment", "L Status", "T Status", "P Status", "Scheduling Notes"])
+    # Adjust column widths as needed
+    ws_summary.column_dimensions['C'].width = 40
+    ws_summary.column_dimensions['D'].width = 40
+    ws_summary.column_dimensions['I'].width = 50
+
+    # Add Basket Group Status
+    ws_summary.append([])
+    ws_summary.append(["Basket Group Summary"])
+    for basket_key, group_info in basket_groups.items():
+         offerings_str = ", ".join([str(o) if isinstance(o, str) else o['Course Code'] for o in group_info['offerings']])
+         status = "Scheduled" if group_info['scheduled'] else "FAILED"
+         ws_summary.append([
+             "Basket", basket_key, f"Offerings: {len(group_info['offerings'])}", offerings_str,
+             f"Groups: {len(group_info['participating_groups'])}", "-", "-", "-", status
+         ])
+
+    # Add Connector Group Status
+    ws_summary.append([])
+    ws_summary.append(["Connector Group Summary"])
+    for conn_id, group_info in connector_groups.items():
+         course_list = ", ".join([f"{c['Course Code']}({c['Department']}_{c['Semester']})" for c in group_info['courses']])
+         l_stat = f"{group_info['L_sessions_scheduled']}/{group_info['L_sessions_needed']}"
+         t_stat = f"{group_info['T_sessions_scheduled']}/{group_info['T_sessions_needed']}"
+         p_stat = f"{group_info['P_sessions_scheduled']}/{group_info['P_sessions_needed']}"
+         notes = f"Failed: {', '.join(group_info['failed_sessions'])}" if group_info['failed_sessions'] else "OK"
+         ws_summary.append([
+             "Connector", conn_id, course_list, group_info['professor'], group_info['total_enrollment'],
+             l_stat, t_stat, p_stat, notes
+         ])
+
+    # Add individual course status (non-connector or non-basket lead)
+    ws_summary.append([])
+    ws_summary.append(["Individual Course Session Summary"])
+    all_courses_df = load_course_data() # Reload for clean data access
+    for _, course in all_courses_df.iterrows():
+        unique_id = course['unique_id']
+        status = course_schedule_status.get(unique_id, {'L':0,'T':0,'P':0,'failed':[]}) # Get status safely
+
+        # Skip if fully handled by connector/basket (avoid duplicate reporting)
+        is_connector_member = course['class_connector'] and course['unique_id'] != connector_groups.get(course['class_connector'],{}).get('lead_course_id')
+        is_basket_member = course['is_elective'] # Basic check, might need refinement
+
+        # Report status per session type
+        for session_type, needed_key, scheduled_key in [('L', 'L_sessions_needed', 'L'), ('T', 'T_sessions_needed', 'T'), ('P', 'P_sessions_needed', 'P')]:
+            needed = course[needed_key]
+            scheduled_count = status[scheduled_key]
+            if needed > 0:
+                 stat = "OK" if scheduled_count >= needed else "Partial" if scheduled_count > 0 else "Not Scheduled"
+                 details = ""
+                 if session_type in status['failed']:
+                     stat = "Failed"
+                     details = f"Scheduling attempts failed for {needed - scheduled_count} session(s)."
+                 if is_connector_member: details += " Part of Connector. "
+                 if is_basket_member: details += " Part of Basket. "
+
+                 # Only report in detail if not fully handled by group or if failed
+                 if not (is_connector_member or is_basket_member) or stat != "OK":
+                     ws_summary.append([
+                         "Course", unique_id, course['Course Name'], course['Faculty'], course['Enrolled_students'],
+                         f"{status['L']}/{course['L_sessions_needed']}" if session_type=='L' else "-",
+                         f"{status['T']}/{course['T_sessions_needed']}" if session_type=='T' else "-",
+                         f"{status['P']}/{course['P_sessions_needed']}" if session_type=='P' else "-",
+                         f"{session_type}: {stat}. {details}"
+                     ])
+
+
+    try:
+        wb.save(filename)
+        logging.info(f"Timetable successfully exported to {filename}")
+    except Exception as e:
+        logging.error(f"Error saving Excel file: {e}")
+
+# --- Main Execution ---
+if __name__ == "__main__":
+    logging.info("Starting timetable generation...")
+
+    try:
+        # Load data
+        logging.info("Loading classroom data...")
+        classrooms = load_classroom_data('Classrooms.csv')
+        logging.info("Loading course data...")
+        courses_df = load_course_data('Semester_courses.csv')
+
+        departments = courses_df['Department'].unique()
+        semesters_by_dept = courses_df.groupby('Department')['Semester'].unique().to_dict()
+
+        professor_schedule, classroom_schedule, group_schedule = {}, {}, {}
+        timetables = initialize_timetable(departments, semesters_by_dept)
+
+        course_schedule_status = {
+            row['unique_id']: {'L': 0, 'T': 0, 'P': 0, 'failed': []}
+            for _, row in courses_df.iterrows()
+        }
+
+        logging.info("Identifying connector groups...")
+        connector_groups = build_connector_groups(courses_df)
+        logging.info("Grouping courses by basket...")
+        basket_groups = group_courses_by_basket(courses_df, connector_groups)
+
+        # --- Scheduling Order ---
+        # 1. Schedule Basket Groups
+        logging.info(f"Scheduling {len(basket_groups)} Basket Groups...")
+        sorted_basket_keys = sorted(basket_groups.keys()) # Schedule consistently
+        for basket_key in sorted_basket_keys:
+             schedule_basket_group(basket_key, basket_groups[basket_key], classrooms, connector_groups,
+                                  professor_schedule, classroom_schedule, group_schedule, timetables, course_schedule_status)
+
+        # 2. Schedule remaining Connector Groups (those not part of baskets)
+        logging.info("Scheduling remaining Connector Groups...")
+        for connector_id, group_info in connector_groups.items():
+             if not group_info.get('is_elective_connector', False): # Only schedule if not handled by basket
+                  # Schedule L, T, P sessions for this connector group
+                  for session_type, needed_key, scheduled_key, duration, room_type in [
+                      ('L', 'L_sessions_needed', 'L_sessions_scheduled', LECTURE_SLOTS, 'LECTURE_ROOM'),
+                      ('T', 'T_sessions_needed', 'T_sessions_scheduled', TUTORIAL_SLOTS, 'LECTURE_ROOM'),
+                      ('P', 'P_sessions_needed', 'P_sessions_scheduled', LAB_SLOTS, 'LAB')
+                  ]:
+                      needed = group_info[needed_key]
+                      scheduled_count = group_info[scheduled_key]
+                      for _ in range(needed - scheduled_count):
+                          if duration > 0:
+                              schedule_course_component(group_info, session_type, needed, duration, room_type,
+                                                         classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                                         course_schedule_status, connector_groups)
+
+
+        # 3. Schedule remaining Labs, Tutorials, Lectures for standalone courses
+        logging.info("Scheduling remaining Labs, Tutorials, and Lectures for standalone courses...")
+        for _, course_series in courses_df.iterrows():
+            course = course_series.to_dict()
+            unique_id = course['unique_id']
+
+            # Skip if it's part of any connector or basket group (handled above)
+            if course['class_connector'] or course['is_elective']:
+                 continue
+
+            # Schedule Labs (P)
+            needed = course['P_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['P']
+            for _ in range(needed - scheduled_count):
+                 if LAB_SLOTS > 0:
+                    schedule_course_component(course, 'P', needed, LAB_SLOTS, 'LAB',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+            # Schedule Tutorials (T)
+            needed = course['T_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['T']
+            for _ in range(needed - scheduled_count):
+                 if TUTORIAL_SLOTS > 0:
+                    schedule_course_component(course, 'T', needed, TUTORIAL_SLOTS, 'LECTURE_ROOM',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+            # Schedule Lectures (L)
+            needed = course['L_sessions_needed']
+            scheduled_count = course_schedule_status[unique_id]['L']
+            for _ in range(needed - scheduled_count):
+                 if LECTURE_SLOTS > 0:
+                    schedule_course_component(course, 'L', needed, LECTURE_SLOTS, 'LECTURE_ROOM',
+                                             classrooms, professor_schedule, classroom_schedule, group_schedule, timetables,
+                                             course_schedule_status, connector_groups)
+
+
+        # Export results
+        logging.info("Exporting timetable to Excel...")
+        export_to_excel(timetables, course_schedule_status, connector_groups, basket_groups, filename="timetable_generated_v2.xlsx")
+
+    except FileNotFoundError as e:
+        logging.error(f"Input file not found: {e}. Ensure 'Classrooms.csv' and 'Semester_courses.csv' are present.")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}", exc_info=True)
+    finally:
+        logging.info("Scheduling completed.")
